@@ -1,0 +1,13 @@
+BASEDIR=/home/vivipos/workspace/LICENSES
+
+PATH=/bin:usr/bin:$BASEDIR/bin
+
+MAILDIR=$BASEDIR/LICENSES
+BINDIR=$MAILDIR/bin
+REQDIR=$MAILDIR/request
+LOGFILE=$MAILDIR/log/requests-received.`date +%y-%m-%d`
+COUNT=`grep -E -c -e "^  Folder:" "$LOGFILE"`
+
+:0:
+* ^From:.*@vivipos.com.tw>
+| $BINDIR/process-requests $REQDIR $COUNT >>/tmp/process.log 2>&1

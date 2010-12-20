@@ -1,0 +1,181 @@
+#!/bin/sh -x
+
+PATH=/bin:/usr/bin:/usr/local/bin
+REQDIR=$1
+COUNT=$2
+REQUEST_ID="`date +%Y%m%d`-$((COUNT+1))-`date +%H%M`"
+
+ATTACHDIR="$REQDIR/$REQUEST_ID/attachments"
+LICENSE_TOOL=/data/vivipos_sdk/DONTRELEASE/getSystemLicense
+SMTP_CLIENT=msmtp
+REPLY_SENDER="VIVIPOS License Service"
+REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
+REPLY_SUBJECT="License import request status"
+
+validate_stub()
+{
+    local ORDER=$1
+    local SERIAL=$2
+    local STUB=$3
+    local KEY=$4
+
+    if [ -z "$ORDER" ]; then
+	REASON="Order number is empty"
+	return 1
+    else
+	PREFIX=`echo -n $ORDER | awk -F"-" '{print $1}'`
+	if [ "$PREFIX" != "B220" -a "$PREFIX" != "V220" -a "$PREFIX" != "VM" ]; then
+	    REASON="Invalid order number"
+	    return 1
+	fi
+    fi
+
+    if [ "$PREFIX" = "VM" -a -z "$SERIAL" ]; then
+	REASON="Serial number is empty for non-VM license"
+	return 1
+    fi
+
+    STUB_LEN=`echo -n $STUB | wc -c`
+    if [ $STUB_LEN -ne 128 ]; then
+	REASON="License stub key length is not 128 bytes ($STUB_LEN)"
+	return 1
+    fi
+
+    KEY_LEN=`echo -n $KEY | wc -c`
+    if [ $KEY_LEN -ne 128 ]; then
+	REASON="License key length is not 128 bytes ($KEY_LEN)"
+	return 1
+    fi
+
+    return 0
+}
+
+insert_db() {
+    :
+}
+
+process_stub() {
+
+    local stub=$1
+
+    # for each stub file, file name is the serial number
+    SERIAL=`basename "$stub" .txt`
+
+    # import stub details into environment
+    eval `awk -F"=" '$1 ~ /[A-Za-z0-9_]+/ { print "export " $1 "=\"" $2 "\"";  }' "$stub"`
+
+    # generate license key
+    KEY=`$LICENSE_TOOL -f "$stub"`
+
+    # log output
+    cat > "${REQDIR}/${REQUEST_ID}/stub-${SERIAL}" <<EOF-$REQUEST_ID
+ORDER_NO=$ORDER_NO
+SERIAL_NUMBER=$SERIAL
+DALLAS_KEY=$dallas
+SYSTEM_NAME=$system_name
+VENDOR_NAME=$vendor_name
+MAC_ADDRESS=$mac_address
+TERMINAL_STUB=$license_stub
+SDK_LICENSE_KEY=$KEY
+EOF-$REQUEST_ID
+
+    # are data valid?
+    validate_stub "$ORDER_NO" "$SERIAL" "$license_stub" "$KEY"
+    if [ "$?" -ne 0 ]; then
+        echo "ORDER <$ORDER_NO> FILE <$SERIAL> REASON <$REASON>" >> "$REQDIR/$REQUEST_ID/rejected.log"
+        mv "${REQDIR}/${REQUEST_ID}/stub-${SERIAL}" "${REQDIR}/${REQUEST_ID}/bad-stub-${SERIAL}"
+    else
+
+        # attempt to insert into DB
+        insert_db
+        if [ "$?" -ne 0 ]; then
+            echo "ORDER <$ORDER_NO> FILE <$SERIAL> REASON <$REASON>" >> "$REQDIR/$REQUEST_ID/rejected.log"
+            mv "${REQDIR}/${REQUEST_ID}/stub-${SERIAL}" "${REQDIR}/${REQUEST_ID}/failed-stub-${SERIAL}"
+        else
+            echo "ORDER <$ORDER_NO> FILE <$SERIAL>" >> "$REQDIR/$REQUEST_ID/imported.log"
+        fi
+
+    fi
+}
+
+# extract attachments
+
+mkdir -p "$ATTACHDIR"
+env > "$REQDIR/$REQUEST_ID/env"
+cat > "$REQDIR/$REQUEST_ID/req"
+ripmime -i "$REQDIR/$REQUEST_ID/req" -d "$ATTACHDIR" --no-nameless
+
+# begin processing RAR attachments
+
+for f in `ls $ATTACHDIR/*.rar`; do
+
+    # for RAR, file name is the order number
+    ORDER_NO=`basename "$f" .rar`
+
+    # extract stub files into temp folder
+    mkdir "$ATTACHDIR/$ORDER_NO"
+    unrar x -y "$f" "$ATTACHDIR/$ORDER_NO"
+
+    for stub in `ls "$ATTACHDIR/$ORDER_NO"/*.txt`; do
+        process_stub "$stub"
+    done
+
+done
+
+# begin processing TXT attachments (
+for stub in `ls $ATTACHDIR/*.txt`; do
+
+    # for TXT, order number should be in the subject line
+    ORDER_NO=`grep -E -e "^Subject: (B220|V220|VM)-[alnum]*" "$REQDIR/$REQUEST_ID/req" | awk -F" " '{print $2}'`
+    process_stub "$stub"
+
+done
+
+# begin processing LIC attachments (partner licenses)
+
+# extract sender from request
+SENDER=`sed '/^Reply-To:/q; /^From:/h; /./d;g;q' "$REQDIR/$REQUEST_ID/req" | sed 's/ *(.*)//; s/>.*//; s/.*[:<] *//'`
+if [ -z "$SENDER" ]; then
+    SENDER=$FROM
+fi
+
+# prepare response
+cat > "$REQDIR/$REQUEST_ID/response" <<EOF-$REQUEST_ID
+From: $REPLY_SENDER
+To: $SENDER
+Subject: $REPLY_SUBJECT
+Reply-To: $REPLY_REPLY_TO
+
+We have received and processed your license import request.
+Your request has been assigned the following ID:
+
+    $REQUEST_ID
+
+Results from your request:
+
+EOF-$REQUEST_ID
+
+if [ -f "$REQDIR/$REQUEST_ID/imported.log" ]; then
+    echo "[IMPORTED]" >> "$REQDIR/$REQUEST_ID/response"
+    cat "$REQDIR/$REQUEST_ID/imported.log" >> "$REQDIR/$REQUEST_ID/response"
+    echo >> "$REQDIR/$REQUEST_ID/response"
+    echo >> "$REQDIR/$REQUEST_ID/response"
+fi
+
+if [ -f "$REQDIR/$REQUEST_ID/rejected.log" ]; then
+    echo "[REJECTED]" >> "$REQDIR/$REQUEST_ID/response"
+    cat "$REQDIR/$REQUEST_ID/rejected.log" >> "$REQDIR/$REQUEST_ID/response"
+    echo >> "$REQDIR/$REQUEST_ID/response"
+    echo >> "$REQDIR/$REQUEST_ID/response"
+fi
+
+if [ ! -f "$REQDIR/$REQUEST_ID/imported.log" -a ! -f "$REQDIR/$REQUEST_ID/rejected.log" ]; then
+    echo "-- No valid license file found --" >> "$REQDIR/$REQUEST_ID/response"
+    echo >> "$REQDIR/$REQUEST_ID/response"
+    echo >> "$REQDIR/$REQUEST_ID/response"
+fi
+echo "Yours Sincerely," >> "$REQDIR/$REQUEST_ID/response"
+echo "VIVIPOS License Service" >> "$REQDIR/$REQUEST_ID/response"
+echo >> "$REQDIR/$REQUEST_ID/response"
+
+$SMTP_CLIENT -t < "$REQDIR/$REQUEST_ID/response"
