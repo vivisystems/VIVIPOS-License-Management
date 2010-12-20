@@ -269,4 +269,4 @@ cat >> "$REQDIR/$REQUEST_ID/response" <<EOF-$REQUEST_ID
 $REQ_BODY
 EOF-$REQUEST_ID
 
-#$SMTP_CLIENT -t < "$REQDIR/$REQUEST_ID/response"
+$SMTP_CLIENT -t < "$REQDIR/$REQUEST_ID/response" > "$REQDIR/$REQUEST_ID/response.smtp" 2>&1
