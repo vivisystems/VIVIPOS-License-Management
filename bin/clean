@@ -4,3 +4,5 @@ BASEDIR=/home/vivipos/workspace/LICENSES
 
 rm -f $BASEDIR/log/*
 rm -rf $BASEDIR/request/*
+rm -f /tmp/process.log
+

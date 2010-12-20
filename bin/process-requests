@@ -12,6 +12,17 @@ REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License import request status"
 
+
+############################################################################
+#
+# validate_stub
+#
+# validate stub file
+#
+# @args: <order number> <MB serial number> <stub file> <terminal key>
+#
+############################################################################
+
 validate_stub()
 {
     local ORDER=$1
@@ -50,9 +61,44 @@ validate_stub()
     return 0
 }
 
-insert_db() {
-    :
+############################################################################
+#
+# store_license
+#
+# store license in db
+#
+# @args: <stub file>
+#
+############################################################################
+
+SDK_PARTNER_ID=VIVIPOS_SDK
+store_license() {
+
+# insert entry into Terminals
+cat | mysql vivipos <<EOF-$REQUEST_ID
+INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, create_request_id)
+values ('$license_stub', '$SERIAL', '$dallas', '$system_name', '$vendor_name', '$mac_address', '', '$REQ_TO', NOW(), '$REQUEST_ID')
+ON DUPLICATE KEY UPDATE model=VALUES(model), serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id='$REQUEST_ID', update_count=update_count+1
+EOF-$REQUEST_ID
+
+# insert license
+cat | mysql vivipos <<EOF-$REQUEST_ID
+INSERT into Licenses(terminal_stub, partner_id, license_key, order_number, signed_by, created_by, created, create_request_id)
+values ('$license_stub', '$SDK_PARTNER_ID', '$KEY', '$ORDER_NO', '$SENDER', '$REQ_TO', NOW(), '$REQUEST_ID')
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='$REQUEST_ID', update_count=update_count+1
+EOF-$REQUEST_ID
+
 }
+
+############################################################################
+#
+# process_stub
+#
+# process a stub file
+#
+# @args: <stub file>
+#
+############################################################################
 
 process_stub() {
 
@@ -87,7 +133,7 @@ EOF-$REQUEST_ID
     else
 
         # attempt to insert into DB
-        insert_db
+        store_license
         if [ "$?" -ne 0 ]; then
             echo "ORDER <$ORDER_NO> FILE <$SERIAL> REASON <$REASON>" >> "$REQDIR/$REQUEST_ID/rejected.log"
             mv "${REQDIR}/${REQUEST_ID}/stub-${SERIAL}" "${REQDIR}/${REQUEST_ID}/failed-stub-${SERIAL}"
@@ -98,15 +144,40 @@ EOF-$REQUEST_ID
     fi
 }
 
-# extract attachments
-
+# saving request
 mkdir -p "$ATTACHDIR"
 env > "$REQDIR/$REQUEST_ID/env"
 cat > "$REQDIR/$REQUEST_ID/req"
+
+# extract SUBJECT
+REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "$REQDIR/$REQUEST_ID/req"`
+REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "$REQDIR/$REQUEST_ID/req" | awk -F" " '{print $2}'`
+REQ_DATE=`grep -E -m 1 -e "^Date: " "$REQDIR/$REQUEST_ID/req"`
+REQ_BODY=`sed '1,/^$/d' "$REQDIR/$REQUEST_ID/req"`
+REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "$REQDIR/$REQUEST_ID/req"`
+
+# extract multipart boundary
+REQ_MULTIPART_BOUNDARY=`echo $REQ_CONTENT_TYPE | sed -n '/^Content-Type: multipart\/mixed; / {
+s/.*boundary=\(.*\)_\1_/
+p
+}'`
+
+if [ -z "$REQ_MULTIPART_BOUNDARY" ]; then
+    RES_MULTIPART_BOUNDARY=`uuid`
+else
+    RES_MULTIPART_BOUNDARY=REQ_MULTIPART_BOUNDARY
+fi
+
+# extract sender from request
+SENDER=`sed '/^Reply-To:/q; /^From:/h; /./d;g;q' "$REQDIR/$REQUEST_ID/req" | sed 's/ *(.*)//; s/>.*//; s/.*[:<] *//'`
+if [ -z "$SENDER" ]; then
+    SENDER=$FROM
+fi
+
+# extract attachments
 ripmime -i "$REQDIR/$REQUEST_ID/req" -d "$ATTACHDIR" --no-nameless
 
 # begin processing RAR attachments
-
 for f in `ls $ATTACHDIR/*.rar`; do
 
     # for RAR, file name is the order number
@@ -126,18 +197,13 @@ done
 for stub in `ls $ATTACHDIR/*.txt`; do
 
     # for TXT, order number should be in the subject line
-    ORDER_NO=`grep -E -e "^Subject: (B220|V220|VM)-[alnum]*" "$REQDIR/$REQUEST_ID/req" | awk -F" " '{print $2}'`
+    ORDER_NO=`echo $REQ_SUBJECT | grep -E -m 1 -e "^Subject: (B220|V220|VM)-[alnum]*" | awk -F" " '{print $2}'`
     process_stub "$stub"
 
 done
 
 # begin processing LIC attachments (partner licenses)
 
-# extract sender from request
-SENDER=`sed '/^Reply-To:/q; /^From:/h; /./d;g;q' "$REQDIR/$REQUEST_ID/req" | sed 's/ *(.*)//; s/>.*//; s/.*[:<] *//'`
-if [ -z "$SENDER" ]; then
-    SENDER=$FROM
-fi
 
 # prepare response
 cat > "$REQDIR/$REQUEST_ID/response" <<EOF-$REQUEST_ID
@@ -145,6 +211,11 @@ From: $REPLY_SENDER
 To: $SENDER
 Subject: $REPLY_SUBJECT
 Reply-To: $REPLY_REPLY_TO
+Content-Type: multipart/mixed; boundary=$RES_MULTIPART_BOUNDARY
+
+--$RES_MULTIPART_BOUNDARY
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
 
 We have received and processed your license import request.
 Your request has been assigned the following ID:
@@ -178,4 +249,24 @@ echo "Yours Sincerely," >> "$REQDIR/$REQUEST_ID/response"
 echo "VIVIPOS License Service" >> "$REQDIR/$REQUEST_ID/response"
 echo >> "$REQDIR/$REQUEST_ID/response"
 
-$SMTP_CLIENT -t < "$REQDIR/$REQUEST_ID/response"
+# include original email
+cat >> "$REQDIR/$REQUEST_ID/response" <<EOF-$REQUEST_ID
+-------- Original Email --------
+From: $SENDER
+To: $REQ_TO
+Date: $REQ_DATE
+$REQ_SUBJECT
+
+--$RES_MULTIPART_BOUNDARY
+EOF-$REQUEST_ID
+
+if [ -z "$REQ_MULTIPART_BOUNDARY" ]; then
+echo "$REQ_CONTENT_TYPE" >> "$REQDIR/$REQUEST_ID/response"
+echo >> "$REQDIR/$REQUEST_ID/response"
+fi
+
+cat >> "$REQDIR/$REQUEST_ID/response" <<EOF-$REQUEST_ID
+$REQ_BODY
+EOF-$REQUEST_ID
+
+#$SMTP_CLIENT -t < "$REQDIR/$REQUEST_ID/response"

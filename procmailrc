@@ -2,10 +2,9 @@ BASEDIR=/home/vivipos/workspace/LICENSES
 
 PATH=/bin:usr/bin:$BASEDIR/bin
 
-MAILDIR=$BASEDIR/LICENSES
-BINDIR=$MAILDIR/bin
-REQDIR=$MAILDIR/request
-LOGFILE=$MAILDIR/log/requests-received.`date +%y-%m-%d`
+BINDIR=$BASEDIR/bin
+REQDIR=$BASEDIR/request
+LOGFILE=$BASEDIR/log/requests-received.`date +%y-%m-%d`
 COUNT=`grep -E -c -e "^  Folder:" "$LOGFILE"`
 
 :0:
