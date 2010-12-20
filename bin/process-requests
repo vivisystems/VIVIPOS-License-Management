@@ -158,14 +158,14 @@ REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "$REQDIR/$REQUEST_ID/req"`
 
 # extract multipart boundary
 REQ_MULTIPART_BOUNDARY=`echo $REQ_CONTENT_TYPE | sed -n '/^Content-Type: multipart\/mixed; / {
-s/.*boundary=\(.*\)_\1_/
+s_.*boundary=\(.*\)_\1_
 p
 }'`
 
 if [ -z "$REQ_MULTIPART_BOUNDARY" ]; then
     RES_MULTIPART_BOUNDARY=`uuid`
 else
-    RES_MULTIPART_BOUNDARY=REQ_MULTIPART_BOUNDARY
+    RES_MULTIPART_BOUNDARY="$REQ_MULTIPART_BOUNDARY"
 fi
 
 # extract sender from request
