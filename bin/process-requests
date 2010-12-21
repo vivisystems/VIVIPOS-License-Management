@@ -128,17 +128,19 @@ EOF-$REQUEST_ID
     # are data valid?
     validate_stub "$ORDER_NO" "$SERIAL" "$license_stub" "$KEY"
     if [ "$?" -ne 0 ]; then
-        echo "ORDER <$ORDER_NO> FILE <$SERIAL> REASON <$REASON>" >> "$REQDIR/$REQUEST_ID/rejected.log"
+        echo "ORDER <$ORDER_NO> FILE <$SERIAL> TYPE <STUB> REASON <$REASON>" >> "$REQDIR/$REQUEST_ID/rejected.log"
         mv "${REQDIR}/${REQUEST_ID}/stub-${SERIAL}" "${REQDIR}/${REQUEST_ID}/bad-stub-${SERIAL}"
+        return 1
     else
 
         # attempt to insert into DB
         store_license
         if [ "$?" -ne 0 ]; then
-            echo "ORDER <$ORDER_NO> FILE <$SERIAL> REASON <$REASON>" >> "$REQDIR/$REQUEST_ID/rejected.log"
+            echo "ORDER <$ORDER_NO> FILE <$SERIAL> TYPE <STUB> REASON <$REASON>" >> "$REQDIR/$REQUEST_ID/rejected.log"
             mv "${REQDIR}/${REQUEST_ID}/stub-${SERIAL}" "${REQDIR}/${REQUEST_ID}/failed-stub-${SERIAL}"
+            return 1
         else
-            echo "ORDER <$ORDER_NO> FILE <$SERIAL>" >> "$REQDIR/$REQUEST_ID/imported.log"
+            echo "ORDER <$ORDER_NO> FILE <$SERIAL> TYPE <STUB>" >> "$REQDIR/$REQUEST_ID/imported.log"
         fi
 
     fi
@@ -189,6 +191,18 @@ for f in `ls $ATTACHDIR/*.rar`; do
 
     for stub in `ls "$ATTACHDIR/$ORDER_NO"/*.txt`; do
         process_stub "$stub"
+
+        STUB_RESULT=$?
+
+        # processing corresponding LIC attachments (partner licenses)
+        SERIAL=`basename "$stub" .txt`
+        if [ -f "${SERIAL}.lic" ]; then
+            if [ $STUB_RESULT -ne 0 ]; then
+                echo "ORDER <$ORDER_NO> FILE <$SERIAL> TYPE <PARTNER> REASON <Processing of terminal stub failed>" >> "$REQDIR/$REQUEST_ID/rejected.log"
+            else
+                process_lic "${SERIAL}.lic"
+            fi
+        fi
     done
 
 done
@@ -197,12 +211,21 @@ done
 for stub in `ls $ATTACHDIR/*.txt`; do
 
     # for TXT, order number should be in the subject line
-    ORDER_NO=`echo $REQ_SUBJECT | grep -E -m 1 -e "^Subject: (B220|V220|VM)-[alnum]*" | awk -F" " '{print $2}'`
+    ORDER_NO=`echo $REQ_SUBJECT | grep -E -m 1 -e "^Subject: [ \t]*(B220|V220|VM)-[alnum]*" | awk -F" " '{print $2}'`
     process_stub "$stub"
 
-done
+    STUB_RESULT=$?
 
-# begin processing LIC attachments (partner licenses)
+    # processing corresponding LIC attachments (partner licenses)
+    SERIAL=`basename "$stub" .txt`
+    if [ -f "${SERIAL}.lic" ]; then
+        if [ $STUB_RESULT -ne 0 ]; then
+            echo "ORDER <$ORDER_NO> FILE <$SERIAL> TYPE <PARTNER> REASON <Processing of terminal stub failed>" >> "$REQDIR/$REQUEST_ID/rejected.log"
+        else
+            process_lic "${SERIAL}.lic"
+        fi
+    fi
+done
 
 
 # prepare response
