@@ -1,9 +1,15 @@
 #!/bin/sh -x
 
+############################################################################
+# set up base environment
+############################################################################
+
 PATH=/bin:/usr/bin:/usr/local/bin
 REQDIR=$1
 COUNT=$2
 REQUEST_ID="`date +%Y%m%d`-$((COUNT+1))-`date +%H%M`"
+IFS='
+'
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
 LICENSE_TOOL=/data/vivipos_sdk/DONTRELEASE/getSystemLicense
@@ -71,23 +77,28 @@ validate_stub()
 #
 ############################################################################
 
-SDK_PARTNER_ID=VIVIPOS_SDK
+SDK_PARTNER_ID=VIVIPOS_CORE
 store_stub() {
 
 # insert entry into Terminals
 cat | mysql vivipos <<EOF-${REQUEST_ID}
+BEGIN;
+
 INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, create_request_id)
-values ('${license_stub}', '${SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE model=VALUES(model), serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1
+values ('${license_stub}', '${SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
+ON DUPLICATE KEY UPDATE model=VALUES(model), serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+
+INSERT into Licenses(terminal_stub, partner_id, license_key, serial_number, order_number, signed_by, created_by, created, create_request_id)
+values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', '${LICENSE_SERIAL_NUMBER}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), serial_number=VALUES(serial_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+
+COMMIT;
 EOF-${REQUEST_ID}
 
-# insert license
-cat | mysql vivipos <<EOF-${REQUEST_ID}
-INSERT into Licenses(terminal_stub, partner_id, license_key, order_number, signed_by, created_by, created, create_request_id)
-values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1
-EOF-${REQUEST_ID}
-
+    if [ $? -ne 0 ]; then
+        REASON='Failed to store stub into database ($?)'
+        return 1
+    fi
 }
 
 ############################################################################
@@ -109,6 +120,7 @@ process_stub() {
 
     # import stub details into environment
     eval `awk -F"=" '$1 ~ /[A-Za-z0-9_]+/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
+    LICENSE_SERIAL_NUMBER=${license_key_serial:-LEGACY}
 
     # generate license key
     KEY=`${LICENSE_TOOL} -f "${stub}"`
@@ -123,6 +135,7 @@ VENDOR_NAME=${vendor_name}
 MAC_ADDRESS=${mac_address}
 TERMINAL_STUB=${license_stub}
 SDK_LICENSE_KEY=${KEY}
+LICENSE_SERIAL_NUMBER=${LICENSE_SERIAL_NUMBER}
 EOF-${REQUEST_ID}
 
     # are data valid?
@@ -146,19 +159,173 @@ EOF-${REQUEST_ID}
     fi
 }
 
+############################################################################
+#
+# validate_licnse
+#
+# validate partner license file
+#
+# @args: <partner id> <partner key>
+#
+############################################################################
+
+validate_license() {
+    local PARTNER_ID=$1
+    local PARTNER_KEY=$2
+
+    if [ -z "${PARTNER_ID}" ]; then
+	REASON="Partner ID is empty"
+	return 1
+    fi
+
+    if [ -z "${PARTNER_KEY}" ]; then
+	REASON="Partner key is empty"
+	return 1
+    fi
+
+    local KEY_LEN=`echo -n "${PARTNER_KEY}" | wc -c`
+    if [ ${KEY_LEN} -ne 77 ]; then
+	REASON="License key length is not 77 bytes (${KEY_LEN})"
+	return 1
+    fi
+
+    return 0
+}
+
+############################################################################
+#
+# store_license
+#
+# store partner license in db
+#
+# @args: <terminal stub> <order number> <partner id> <partner key>
+#
+############################################################################
+
+store_license() {
+    local TERMINAL_STUB=$1
+    local ORDER_NO=$2
+    local PARTNER_ID=$3
+    local PARTNER_KEY=$4
+
+    # check if partner ID exists
+    SQL="select count(*) from Partners where partner_id='${PARTNER_ID}'"
+    COUNT=`echo "$SQL" | mysql -N vivipos`
+
+    if [ $? -ne 0 ]; then
+        REASON="Failed to retrieve partner information"
+        return 1
+    else
+        if [ "$COUNT" = "1" ]; then
+
+# insert entry into Licenses
+cat <<EOF-${REQUEST_ID} | mysql vivipos
+INSERT into Licenses(terminal_stub, partner_id, license_key, order_number, signed_by, created_by, created, create_request_id)
+values ('${TERMINAL_STUB}', '${PARTNER_ID}', '${PARTNER_KEY}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+EOF-${REQUEST_ID}
+
+            if [ $? -ne 0 ]; then
+                REASON='Failed to store stub into database ($?)'
+                return 1
+            fi
+
+        elif [ "$COUNT" = "0" ]; then
+            REASON="Partner ID does not exist in database"
+            return 1
+        else
+            REASON="Multiple entries with the same partner ID found"
+            return 1
+        fi
+    fi
+}
+
+############################################################################
+#
+# process_license
+#
+# process partner license file
+#
+# @args: <partner license file>
+#
+############################################################################
+
+process_license() {
+
+    local LICENSE_FILE=$1
+
+    LICENSES=`sed -n '
+		# extract partner ID
+		/^\[.*\]/, /^signed_key=/ {
+		    /^\[.*\]/ {
+			s/^\[\(.*\)\]/\1/;h
+		    }
+		    /^signed_key=/!d
+		    /^signed_key=/ {
+			s/^signed_key\(.*\)/\1/
+			H
+			g
+			s/^\(.*\)\n\(.*\)$/\1\2/
+			p
+		    }
+		}
+		' < "${LICENSE_FILE}"`
+
+    for license in ${LICENSES}; do
+	PARTNER_ID=`echo "${license}" | sed -n 's/^\([^=]*\)=.*$/\1/;p'`
+	PARTNER_KEY=`echo "${license}" | sed -n 's/^[^=]*=\(.*$\)/\1/;p'`
+
+	# log output
+	echo "${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/license-${SERIAL}-${PARTNER_ID}"
+
+	# are data valid?
+	validate_license "${PARTNER_ID}" "${PARTNER_KEY}"
+	if [ "$?" -ne 0 ]; then
+	    echo "ORDER <${ORDER_NO}> FILE <${SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+	    echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/bad-license-${SERIAL}-${PARTNER_ID}"
+	    echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/bad-license-${SERIAL}-${PARTNER_ID}"
+	    echo >> "${REQDIR}/${REQUEST_ID}/bad-license-${SERIAL}-${PARTNER_ID}"
+	else
+
+	    # attempt to insert into DB
+	    store_license "${license_stub}" "${ORDER_NO}" "${PARTNER_ID}" "${PARTNER_KEY}"
+	    if [ "$?" -ne 0 ]; then
+		echo "ORDER <${ORDER_NO}> FILE <${SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+		echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/failed-license-${SERIAL}-${PARTNER_ID}"
+		echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/failed-license-${SERIAL}-${PARTNER_ID}"
+		echo >> "${REQDIR}/${REQUEST_ID}/failed-license-${SERIAL}-${PARTNER_ID}"
+	    else
+		echo "ORDER <${ORDER_NO}> FILE <${SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}>" >> "${REQDIR}/${REQUEST_ID}/imported.log"
+	    fi
+	fi
+    done
+}
+
+############################################################################
+#
+# main
+#
+############################################################################
+
+############################################################################
 # saving request
+############################################################################
 mkdir -p "${ATTACHDIR}"
 env > "${REQDIR}/${REQUEST_ID}/env"
 cat > "${REQDIR}/${REQUEST_ID}/req"
 
+############################################################################
 # extract SUBJECT
+############################################################################
 REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
 REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
 REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req"`
 REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
 REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req"`
 
+############################################################################
 # extract multipart boundary
+############################################################################
 REQ_MULTIPART_BOUNDARY=`echo ${REQ_CONTENT_TYPE} | sed -n '/^Content-Type: multipart\/mixed; / {
 s_.*boundary=\(.*\)_\1_
 p
@@ -170,65 +337,80 @@ else
     RES_MULTIPART_BOUNDARY="${REQ_MULTIPART_BOUNDARY}"
 fi
 
+############################################################################
 # extract sender from request
+############################################################################
 SENDER=`sed '/^Reply-To:/q; /^From:/h; /./d;g;q' "${REQDIR}/${REQUEST_ID}/req" | sed 's/ *(.*)//; s/>.*//; s/.*[:<] *//'`
 if [ -z "${SENDER}" ]; then
     SENDER=${FROM}
 fi
 
+############################################################################
 # extract attachments
+############################################################################
 ripmime -i "${REQDIR}/${REQUEST_ID}/req" -d "${ATTACHDIR}" --no-nameless
 
+############################################################################
 # begin processing RAR attachments
-for f in `ls ${ATTACHDIR}/*.rar`; do
+############################################################################
+for f in `find ${ATTACHDIR} -name \*.rar`; do
 
-    # for RAR, file name is the order number
-    ORDER_NO=`basename "$f" .rar`
+    # for RAR, file name is <order number>[ model]
+    FILE_NAME=`basename "$f" .rar`
+    ORDER_NO=`echo "${FILE_NAME}" | awk '{print $1}' | sed 's/\([^-]*-[^-]*\)-.*/\1/'`
+    MODEL=`echo "${FILE_NAME}" | awk '{print $2}' | sed 's/\([^#]*\)#.*-.*/\1/'`
 
     # extract stub files into temp folder
     mkdir "${ATTACHDIR}/${ORDER_NO}"
     unrar x -y "$f" "${ATTACHDIR}/${ORDER_NO}"
 
-    for stub in `ls "${ATTACHDIR}/${ORDER_NO}"/*.txt`; do
+    for stub in `find "${ATTACHDIR}/${ORDER_NO}" -name \*.txt`; do
         process_stub "${stub}"
 
         STUB_RESULT=$?
 
         # processing corresponding LIC attachments (partner licenses)
-        SERIAL=`basename "${stub}" .txt`
-        if [ -f "${SERIAL}.lic" ]; then
+        LICENSE_FILE=`echo "${stub}" | sed 's/.txt$/.lic/'`
+        if [ -f "${LICENSE_FILE}" ]; then
             if [ ${STUB_RESULT} -ne 0 ]; then
                 echo "ORDER <${ORDER_NO}> FILE <${SERIAL}> TYPE <PARTNER> REASON <Processing of terminal stub failed>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
             else
-                process_license "${SERIAL}.lic"
+                process_license "${LICENSE_FILE}"
             fi
         fi
     done
 
 done
 
+############################################################################
 # begin processing TXT attachments (
-for stub in `ls ${ATTACHDIR}/*.txt`; do
+############################################################################
+for stub in `find ${ATTACHDIR} -maxdepth 1 -name \*.txt`; do
 
     # for TXT, order number should be in the subject line
-    ORDER_NO=`echo ${REQ_SUBJECT} | grep -E -m 1 -e "^Subject: [ \t]*(B220|V220|VM)-[alnum]*" | awk -F" " '{print $2}'`
+    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|V220|VM)-[alnum]*"`
+    ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}' | sed 's/\([^-]*-[^-]*\)-.*/\1/'`
+    MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/\([^#]*\)#.*-.*/\1/'`
+
     process_stub "${stub}"
 
     STUB_RESULT=$?
 
     # processing corresponding LIC attachments (partner licenses)
-    SERIAL=`basename "${stub}" .txt`
-    if [ -f "${SERIAL}.lic" ]; then
+    LICENSE_FILE=`echo "${stub}" | sed 's/.txt$/.lic/'`
+    if [ -f "${LICENSE_FILE}" ]; then
         if [ ${STUB_RESULT} -ne 0 ]; then
             echo "ORDER <${ORDER_NO}> FILE <${SERIAL}> TYPE <PARTNER> REASON <Processing of terminal stub failed>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
         else
-            process_license "${SERIAL}.lic"
+            process_license "${LICENSE_FILE}"
         fi
     fi
 done
 
 
+############################################################################
 # prepare response
+############################################################################
 cat > "${REQDIR}/${REQUEST_ID}/response" <<EOF-${REQUEST_ID}
 From: ${REPLY_SENDER}
 To: ${SENDER}
@@ -272,7 +454,9 @@ echo "Yours Sincerely," >> "${REQDIR}/${REQUEST_ID}/response"
 echo "VIVIPOS License Service" >> "${REQDIR}/${REQUEST_ID}/response"
 echo >> "${REQDIR}/${REQUEST_ID}/response"
 
+############################################################################
 # include original email
+############################################################################
 cat >> "${REQDIR}/${REQUEST_ID}/response" <<EOF-${REQUEST_ID}
 -------- Original Email --------
 From: ${SENDER}
@@ -292,7 +476,11 @@ cat >> "${REQDIR}/${REQUEST_ID}/response" <<EOF-${REQUEST_ID}
 ${REQ_BODY}
 EOF-${REQUEST_ID}
 
-${SMTP_CLIENT} -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
+############################################################################
+# email response
+############################################################################
+#${SMTP_CLIENT} -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
+:
 if [ "$?" -ne 0 ]; then
     mv "${REQDIR}/${REQUEST_ID}/response" "${REQDIR}/${REQUEST_ID}/response.unsent"
 else
