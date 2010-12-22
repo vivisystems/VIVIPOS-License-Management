@@ -487,7 +487,6 @@ EOF-${REQUEST_ID}
 # email response
 ############################################################################
 ${SMTP_CLIENT} -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
-:
 if [ "$?" -ne 0 ]; then
     mv "${REQDIR}/${REQUEST_ID}/response" "${REQDIR}/${REQUEST_ID}/response.unsent"
 else
