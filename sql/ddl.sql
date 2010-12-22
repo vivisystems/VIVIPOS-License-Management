@@ -1,13 +1,19 @@
-﻿-- phpMyAdmin SQL Dump
+-- phpMyAdmin SQL Dump
 -- version 3.3.2deb1
 -- http://www.phpmyadmin.net
 --
 -- Host: localhost
--- Generation Time: Dec 20, 2010 at 06:37 PM
+-- Generation Time: Dec 23, 2010 at 01:09 AM
 -- Server version: 5.1.41
 -- PHP Version: 5.3.2-1ubuntu4.5
 
 SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8 */;
 
 --
 -- Database: `vivipos`
@@ -18,9 +24,12 @@ SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO";
 --
 -- Table structure for table `Downloads`
 --
+-- Creation: Dec 22, 2010 at 08:53 PM
+-- Last update: Dec 22, 2010 at 08:53 PM
+--
 
 DROP TABLE IF EXISTS `Downloads`;
-CREATE TABLE IF NOT EXISTS `Downloads` (
+CREATE TABLE `Downloads` (
   `download_id` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `terminal_stub` varchar(128) NOT NULL,
   `partner_id` varchar(128) NOT NULL,
@@ -31,22 +40,26 @@ CREATE TABLE IF NOT EXISTS `Downloads` (
   `created` datetime NOT NULL,
   `created_by` varchar(128) NOT NULL,
   PRIMARY KEY (`download_id`),
-  KEY `license_downloaded` (`terminal_stub`, `partner_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+  KEY `license_downloaded` (`terminal_stub`,`partner_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
 
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `Licenses`
 --
+-- Creation: Dec 23, 2010 at 12:20 AM
+-- Last update: Dec 23, 2010 at 01:01 AM
+--
 
 DROP TABLE IF EXISTS `Licenses`;
-CREATE TABLE IF NOT EXISTS `Licenses` (
+CREATE TABLE `Licenses` (
   `terminal_stub` varchar(128) NOT NULL,
   `partner_id` varchar(128) NOT NULL,
   `request_id` int(36) unsigned DEFAULT NULL,
-  `license_key` varchar(128) NOT NULL,
-  `expire_date` datetime DEFAULT NULL,
+  `serial_number` varchar(128) NOT NULL,
+  `license_key` varchar(128) DEFAULT NULL,
+  `expire_date` timestamp NULL DEFAULT NULL,
   `signed_by` varchar(128) NOT NULL,
   `order_number` varchar(36) DEFAULT NULL,
   `created` datetime NOT NULL,
@@ -55,7 +68,11 @@ CREATE TABLE IF NOT EXISTS `Licenses` (
   `update_count` int(11) DEFAULT '0',
   PRIMARY KEY (`terminal_stub`,`partner_id`),
   KEY `partner_issues_licenses` (`partner_id`),
-  KEY `request_generates_licenses` (`request_id`)
+  KEY `request_generates_licenses` (`request_id`),
+  KEY `license_key` (`license_key`),
+  KEY `order_number` (`order_number`),
+  KEY `created_by` (`created_by`),
+  KEY `serial_number` (`serial_number`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
 -- --------------------------------------------------------
@@ -63,9 +80,12 @@ CREATE TABLE IF NOT EXISTS `Licenses` (
 --
 -- Table structure for table `Partners`
 --
+-- Creation: Dec 22, 2010 at 08:53 PM
+-- Last update: Dec 22, 2010 at 09:08 PM
+--
 
 DROP TABLE IF EXISTS `Partners`;
-CREATE TABLE IF NOT EXISTS `Partners` (
+CREATE TABLE `Partners` (
   `partner_id` varchar(128) NOT NULL,
   `name` varchar(128) NOT NULL,
   `email` varchar(128) NOT NULL,
@@ -81,9 +101,12 @@ CREATE TABLE IF NOT EXISTS `Partners` (
 --
 -- Table structure for table `Requests`
 --
+-- Creation: Dec 22, 2010 at 08:53 PM
+-- Last update: Dec 22, 2010 at 08:53 PM
+--
 
 DROP TABLE IF EXISTS `Requests`;
-CREATE TABLE IF NOT EXISTS `Requests` (
+CREATE TABLE `Requests` (
   `request_id` int(36) unsigned NOT NULL AUTO_INCREMENT,
   `customer_name` varchar(128) NOT NULL,
   `email` varchar(128) NOT NULL,
@@ -102,16 +125,19 @@ CREATE TABLE IF NOT EXISTS `Requests` (
   `created_on` datetime NOT NULL,
   `created_by` varchar(128) NOT NULL,
   PRIMARY KEY (`request_id`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
 
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `Terminals`
 --
+-- Creation: Dec 22, 2010 at 11:18 PM
+-- Last update: Dec 23, 2010 at 01:01 AM
+--
 
 DROP TABLE IF EXISTS `Terminals`;
-CREATE TABLE IF NOT EXISTS `Terminals` (
+CREATE TABLE `Terminals` (
   `terminal_stub` varchar(128) NOT NULL,
   `serial_number` varchar(128) DEFAULT NULL,
   `dallas_key` varchar(128) DEFAULT NULL,
@@ -122,7 +148,13 @@ CREATE TABLE IF NOT EXISTS `Terminals` (
   `created` datetime NOT NULL,
   `created_by` varchar(128) NOT NULL,
   `create_request_id` varchar(128) DEFAULT NULL,
+  `generated_by` varchar(128) NOT NULL,
   `update_count` int(11) NOT NULL DEFAULT '0',
-  PRIMARY KEY (`terminal_stub`)
+  PRIMARY KEY (`terminal_stub`),
+  UNIQUE KEY `serial_number` (`serial_number`),
+  KEY `system_name` (`system_name`),
+  KEY `vendor_name` (`vendor_name`),
+  KEY `model` (`model`),
+  KEY `created_by` (`created_by`),
+  KEY `generated_by` (`generated_by`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
-

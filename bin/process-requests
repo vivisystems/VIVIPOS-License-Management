@@ -13,6 +13,7 @@ IFS='
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
 LICENSE_TOOL=/data/vivipos_sdk/DONTRELEASE/getSystemLicense
+PARTNER_TOOL=/data/vivipos_sdk/partners_lic_manager
 SMTP_CLIENT=msmtp
 REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
@@ -84,19 +85,19 @@ store_stub() {
 cat | mysql vivipos <<EOF-${REQUEST_ID}
 BEGIN;
 
-INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, create_request_id)
-values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE model=VALUES(model), serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, create_request_id, generated_by)
+values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
+ON DUPLICATE KEY UPDATE model=VALUES(model), serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id=VALUES(create_request_id), generated_by=VALUES(generated_by), update_count=update_count+1;
 
-INSERT into Licenses(terminal_stub, partner_id, license_key, serial_number, order_number, signed_by, created_by, created, create_request_id)
-values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), serial_number=VALUES(serial_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, create_request_id)
+values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), serial_number=VALUES(serial_number), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
 
 COMMIT;
 EOF-${REQUEST_ID}
 
     if [ $? -ne 0 ]; then
-        REASON='Failed to store stub into database ($?)'
+        REASON="Failed to store stub into database ($?)"
         return 1
     fi
 }
@@ -186,7 +187,7 @@ validate_license() {
     fi
 
     local KEY_LEN=`echo -n "${PARTNER_KEY}" | wc -c`
-    if [ ${KEY_LEN} -ne 77 ]; then
+    if [ ${KEY_LEN} -ne 76 ]; then
 	REASON="License key length is not 77 bytes (${KEY_LEN})"
 	return 1
     fi
@@ -200,7 +201,7 @@ validate_license() {
 #
 # store partner license in db
 #
-# @args: <terminal stub> <order number> <partner id> <partner key>
+# @args: <terminal stub> <order number> <partner id> <partner key> <expire date>
 #
 ############################################################################
 
@@ -209,6 +210,7 @@ store_license() {
     local ORDER_NO=$2
     local PARTNER_ID=$3
     local PARTNER_KEY=$4
+    local EXPIRE_DATE=$5
 
     # check if partner ID exists
     SQL="select count(*) from Partners where partner_id='${PARTNER_ID}'"
@@ -222,13 +224,13 @@ store_license() {
 
 # insert entry into Licenses
 cat <<EOF-${REQUEST_ID} | mysql vivipos
-INSERT into Licenses(terminal_stub, partner_id, license_key, order_number, signed_by, created_by, created, create_request_id)
-values ('${TERMINAL_STUB}', '${PARTNER_ID}', '${PARTNER_KEY}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, order_number, signed_by, created_by, created, create_request_id)
+values ('${TERMINAL_STUB}', '${PARTNER_ID}', '${PARTNER_KEY}', '${EXPIRE_DATE}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
 EOF-${REQUEST_ID}
 
             if [ $? -ne 0 ]; then
-                REASON='Failed to store stub into database ($?)'
+                REASON="Failed to store stub into database ($?)"
                 return 1
             fi
 
@@ -289,8 +291,11 @@ process_license() {
 	    echo >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 	else
 
+	    # extract expire date
+	    EXPIRE_DATE=`${PARTNER_TOOL} -c "${LICENSE_FILE}" -l | grep -E -e "^${PARTNER_ID}[[:space:]]" | awk -F" " '{print $2}'`
+
 	    # attempt to insert into DB
-	    store_license "${license_stub}" "${ORDER_NO}" "${PARTNER_ID}" "${PARTNER_KEY}"
+	    store_license "${license_stub}" "${ORDER_NO}" "${PARTNER_ID}" "${PARTNER_KEY}" "${EXPIRE_DATE}"
 	    if [ "$?" -ne 0 ]; then
 		echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
 		echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
@@ -357,10 +362,10 @@ ripmime -i "${REQDIR}/${REQUEST_ID}/req" -d "${ATTACHDIR}" --no-nameless
 ############################################################################
 for f in `find ${ATTACHDIR} -name \*.rar`; do
 
-    # for RAR, file name is <order number>[ model]
+    # for RAR, file name is <order number>[ model[#n]]
     FILE_NAME=`basename "$f" .rar`
-    ORDER_NO=`echo "${FILE_NAME}" | awk '{print $1}' | sed 's/\([^-]*-[^-]*\)-.*/\1/'`
-    MODEL=`echo "${FILE_NAME}" | awk '{print $2}' | sed 's/\([^#]*\)#.*-.*/\1/'`
+    ORDER_NO=`echo "${FILE_NAME}" | awk '{print $1}' | sed 's/-[^-]*$//'`
+    MODEL=`echo "${FILE_NAME}" | awk '{print $2}' | sed 's/#[^#]*$//'`
 
     # extract stub files into temp folder
     mkdir "${ATTACHDIR}/${ORDER_NO}"
@@ -390,9 +395,9 @@ done
 for stub in `find ${ATTACHDIR} -maxdepth 1 -name \*.txt`; do
 
     # for TXT, order number should be in the subject line
-    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|V220|VM)-[alnum]*"`
-    ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}' | sed 's/\([^-]*-[^-]*\)-.*/\1/'`
-    MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/\([^#]*\)#.*-.*/\1/'`
+    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|V220|VM)-[[:alnum:]]+"`
+    ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}' | sed 's/-[^-]*$//'`
+    MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/#[^#]*$//'`
 
     process_stub "${stub}"
 
@@ -481,7 +486,7 @@ EOF-${REQUEST_ID}
 ############################################################################
 # email response
 ############################################################################
-#${SMTP_CLIENT} -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
+${SMTP_CLIENT} -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
 :
 if [ "$?" -ne 0 ]; then
     mv "${REQDIR}/${REQUEST_ID}/response" "${REQDIR}/${REQUEST_ID}/response.unsent"
