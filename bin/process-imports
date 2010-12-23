@@ -81,13 +81,18 @@ validate_stub()
 SDK_PARTNER_ID=VIVIPOS_CORE
 store_stub() {
 
+# do not update MODEL if new value is empty
+local UPDATE_MODEL_CLAUSE=""
+if [ -n "${MODEL}" ]; then
+    UPDATE_MODEL_CLAUSE="model=VALUES(model), "
+fi
 # insert entry into Terminals
 cat | mysql vivipos <<EOF-${REQUEST_ID}
 BEGIN;
 
 INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, create_request_id, generated_by)
 values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
-ON DUPLICATE KEY UPDATE model=VALUES(model), serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id=VALUES(create_request_id), generated_by=VALUES(generated_by), update_count=update_count+1;
+ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id=VALUES(create_request_id), generated_by=VALUES(generated_by), update_count=update_count+1;
 
 INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, create_request_id)
 values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')

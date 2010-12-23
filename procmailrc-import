@@ -9,4 +9,4 @@ COUNT=`grep -E -c -e "^  Folder:" "$LOGFILE"`
 
 :0:
 * ^From:.*@vivipos.com.tw>
-| $BINDIR/process-requests $REQDIR $COUNT >>/tmp/process.log 2>&1
+| $BINDIR/process-imports $REQDIR $COUNT >>/tmp/import.log 2>&1
