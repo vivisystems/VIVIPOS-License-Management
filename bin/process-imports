@@ -19,6 +19,8 @@ REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License import request status"
 
+SDK_PARTNER_ID=VIVIPOS_CORE
+
 
 ############################################################################
 #
@@ -78,7 +80,6 @@ validate_stub()
 #
 ############################################################################
 
-SDK_PARTNER_ID=VIVIPOS_CORE
 store_stub() {
 
 # do not update MODEL if new value is empty
@@ -327,7 +328,7 @@ env > "${REQDIR}/${REQUEST_ID}/env"
 cat > "${REQDIR}/${REQUEST_ID}/req"
 
 ############################################################################
-# extract SUBJECT
+# extract email headers and content
 ############################################################################
 REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
 REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`

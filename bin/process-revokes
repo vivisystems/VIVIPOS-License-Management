@@ -17,235 +17,108 @@ REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License revoke request status"
 
-
-############################################################################
-#
-# validate_stub
-#
-# validate stub file
-#
-# @args: <order number> <MB serial number> <stub file> <terminal key>
-#
-############################################################################
-
-validate_stub()
-{
-    local ORDER=$1
-    local SERIAL=$2
-    local STUB=$3
-    local KEY=$4
-
-    if [ -z "${ORDER}" ]; then
-	REASON="Order number is empty"
-	return 1
-    else
-	local PREFIX=`echo -n ${ORDER} | awk -F"-" '{print $1}'`
-	if [ "${PREFIX}" != "B220" -a "${PREFIX}" != "V220" -a "${PREFIX}" != "VM" ]; then
-	    REASON="Invalid order number"
-	    return 1
-	fi
-    fi
-
-    if [ "${PREFIX}" = "VM" -a -z "${SERIAL}" ]; then
-	REASON="Serial number is empty for non-VM license"
-	return 1
-    fi
-
-    local STUB_LEN=`echo -n ${STUB} | wc -c`
-    if [ ${STUB_LEN} -ne 128 ]; then
-	REASON="Terminal stub length is not 128 bytes (${STUB_LEN})"
-	return 1
-    fi
-
-    KEY_LEN=`echo -n ${KEY} | wc -c`
-    if [ ${KEY_LEN} -ne 128 ]; then
-	REASON="License key length is not 128 bytes (${KEY_LEN})"
-	return 1
-    fi
-
-    return 0
-}
-
-############################################################################
-#
-# store_stub
-#
-# store terminal stub/license in db
-#
-# @args: <stub file>
-#
-############################################################################
-
 SDK_PARTNER_ID=VIVIPOS_CORE
-store_stub() {
 
-# do not update MODEL if new value is empty
-local UPDATE_MODEL_CLAUSE=""
-if [ -n "${MODEL}" ]; then
-    UPDATE_MODEL_CLAUSE="model=VALUES(model), "
-fi
-# insert entry into Terminals
-cat | mysql vivipos <<EOF-${REQUEST_ID}
-BEGIN;
-
-INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, create_request_id, generated_by)
-values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
-ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id=VALUES(create_request_id), generated_by=VALUES(generated_by), update_count=update_count+1;
-
-INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, create_request_id)
-values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), serial_number=VALUES(serial_number), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
-
-COMMIT;
-EOF-${REQUEST_ID}
-
-    if [ $? -ne 0 ]; then
-        REASON="Failed to store stub into database ($?)"
-        return 1
-    fi
-}
 
 ############################################################################
 #
-# process_stub
+# revoke_stub
 #
-# process a stub file
+# revoke license identified by its stub file
 #
 # @args: <stub file>
 #
 ############################################################################
 
-process_stub() {
+revoke_stub() {
 
     local stub=$1
-
-    # for each stub file, file name is <hardware serial number>[-<software serial number>]
-
-    local BASE_NAME=`basename "${stub}" .txt`
-    HARDWARE_SERIAL=`echo $BASE_NAME | awk -F- '{print $1}'`
-    SOFTWARE_SERIAL=`echo $BASE_NAME | awk -F- '{print $2}'`
+    local FILE_NAME=`basename "$stub"`
 
     # import stub details into environment
     eval `awk -F"=" '$1 ~ /[A-Za-z0-9_]+/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
 
-    # generate license key
-    KEY=`${LICENSE_TOOL} -f "${stub}"`
-
-    # log output
-    cat > "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" <<EOF-${REQUEST_ID}
-ORDER_NO=${ORDER_NO}
-HARDWARE_SERIAL_NUMBER=${HARDWARE_SERIAL}
-DALLAS_KEY=${dallas}
-SYSTEM_NAME=${system_name}
-VENDOR_NAME=${vendor_name}
-MAC_ADDRESS=${mac_address}
-TERMINAL_STUB=${license_stub}
-SDK_LICENSE_KEY=${KEY}
-SOFTWARE_SERIAL_NUMBER=${SOFTWARE_SERIAL}
-EOF-${REQUEST_ID}
-
-    # are data valid?
-    validate_stub "${ORDER_NO}" "${HARDWARE_SERIAL}" "${license_stub}" "${KEY}"
-    if [ "$?" -ne 0 ]; then
-        echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-        mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${REQDIR}/${REQUEST_ID}/bad-stub-${HARDWARE_SERIAL}"
-        return 1
-    else
-
-        # attempt to insert into DB
-        store_stub
-        if [ "$?" -ne 0 ]; then
-            echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-            mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${REQDIR}/${REQUEST_ID}/failed-stub-${HARDWARE_SERIAL}"
-            return 1
-        else
-            echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB>" >> "${REQDIR}/${REQUEST_ID}/imported.log"
-        fi
-
-    fi
-}
-
-############################################################################
-#
-# validate_license
-#
-# validate partner license file
-#
-# @args: <partner id> <partner key>
-#
-############################################################################
-
-validate_license() {
-    local PARTNER_ID=$1
-    local PARTNER_KEY=$2
-
-    if [ -z "${PARTNER_ID}" ]; then
-	REASON="Partner ID is empty"
-	return 1
-    fi
-
-    if [ -z "${PARTNER_KEY}" ]; then
-	REASON="Partner key is empty"
-	return 1
-    fi
-
-    local KEY_LEN=`echo -n "${PARTNER_KEY}" | wc -c`
-    if [ ${KEY_LEN} -ne 76 ]; then
-	REASON="License key length is not 77 bytes (${KEY_LEN})"
-	return 1
-    fi
-
-    return 0
-}
-
-############################################################################
-#
-# store_license
-#
-# store partner license in db
-#
-# @args: <terminal stub> <order number> <partner id> <partner key> <expire date>
-#
-############################################################################
-
-store_license() {
-    local TERMINAL_STUB=$1
-    local ORDER_NO=$2
-    local PARTNER_ID=$3
-    local PARTNER_KEY=$4
-    local EXPIRE_DATE=$5
-
-    # check if partner ID exists
-    SQL="select count(*) from Partners where partner_id='${PARTNER_ID}'"
+    # check if stub exists
+    SQL="select count(*) from Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}'"
     COUNT=`echo "$SQL" | mysql -N vivipos`
 
-    if [ $? -ne 0 ]; then
-        REASON="Failed to retrieve partner information"
-        return 1
+    if [ $COUNT -eq 0 ]; then
+        REASON="No valid [${SDK_PARTNER_ID}] license found"
+	echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
     else
-        if [ "$COUNT" = "1" ]; then
 
-# insert entry into Licenses
-cat <<EOF-${REQUEST_ID} | mysql vivipos
-INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, order_number, signed_by, created_by, created, create_request_id)
-values ('${TERMINAL_STUB}', '${PARTNER_ID}', '${PARTNER_KEY}', '${EXPIRE_DATE}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+	# attempt to move revoked licenses from Licenses into Revoked
+cat << EOF-${REQUEST_ID} | mysql vivipos
+BEGIN;
+
+INSERT INTO Revokes(terminal_stub,
+		    partner_id,
+		    request_id, 
+		    serial_number,
+		    license_key,
+		    expire_date,
+		    signed_by,
+		    order_number,
+		    created,
+		    created_by,
+		    create_request_id,
+		    update_count,
+		    revoked,
+		    revoked_by,
+		    revoke_type,
+		    revoke_request_id)
+    SELECT terminal_stub,
+	   partner_id,
+	   request_id,
+	   serial_number,
+	   license_key,
+	   expire_date,
+	   signed_by,
+	   order_number,
+	   created,
+	   created_by,
+	   create_request_id,
+	   update_count,
+	   NOW(),
+	   '${SENDER}',
+	   'STUB',
+	   '${REQUEST_ID}'
+	FROM Licenses
+	WHERE terminal_stub = '${license_stub}';
+
+DELETE FROM Licenses WHERE terminal_stub = '${license_stub}';
+
+COMMIT;
+
 EOF-${REQUEST_ID}
 
-            if [ $? -ne 0 ]; then
-                REASON="Failed to store stub into database ($?)"
-                return 1
-            fi
+	if [ $? -ne 0 ]; then
+	    REASON="Database error encountered while revoking license ($?)"
+	    echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+	else
+	    # check if license(s) successfully revoked
+	    SQL="select count(*) from Revokes where terminal_stub='${license_stub}' and revoke_request_id='${REQUEST_ID}' and revoke_type='STUB'"
+	    COUNT=`echo "$SQL" | mysql -N vivipos`
 
-        elif [ "$COUNT" = "0" ]; then
-            REASON="Partner ID does not exist in database"
-            return 1
-        else
-            REASON="Multiple entries with the same partner ID found"
-            return 1
-        fi
+	    if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
+		REASON="Database error encountered while verifying revoked license ($?)"
+		echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+	    else
+		echo "TYPE <STUB> FILE <${FILE_NAME}> COUNT <${COUNT}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
+	    fi
+	fi
     fi
 }
+
+############################################################################
+#
+# revoke_sdk_key
+#
+# revoke license identified by its sdk key
+#
+# @args: <stub file>
+#
+############################################################################
 
 ############################################################################
 #
@@ -325,7 +198,7 @@ env > "${REQDIR}/${REQUEST_ID}/env"
 cat > "${REQDIR}/${REQUEST_ID}/req"
 
 ############################################################################
-# extract SUBJECT
+# extract email headers and content
 ############################################################################
 REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
 REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
@@ -365,53 +238,31 @@ ripmime -i "${REQDIR}/${REQUEST_ID}/req" -d "${ATTACHDIR}" --no-nameless
 ############################################################################
 for f in `find ${ATTACHDIR} -name \*.rar`; do
 
+    local FILE_NAME=`basename "$f" .rar`
+
     # extract files into temp folder
-    mkdir "${ATTACHDIR}/revokes
-    unrar x -y "$f" "${REQDIR}/${REQUEST_DIR}/revokes"
-
-    for stub in `find "${ATTACHDIR}/${ORDER_NO}" -name \*.txt`; do
-        process_stub "${stub}"
-
-        STUB_RESULT=$?
-
-        # processing corresponding LIC attachments (partner licenses)
-        LICENSE_FILE=`echo "${stub}" | sed 's/.txt$/.lic/'`
-        if [ -f "${LICENSE_FILE}" ]; then
-            if [ ${STUB_RESULT} -ne 0 ]; then
-                echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> REASON <Processing of terminal stub failed>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-            else
-                process_license "${LICENSE_FILE}"
-            fi
-        fi
-    done
+    mkdir "${ATTACHDIR}/${FILE_NAME}"
+    unrar x -y "$f" "${ATTACHDIR}/${FILE_NAME}"
 
 done
 
 ############################################################################
-# begin processing TXT attachments (
+# begin processing stub attachments
 ############################################################################
-for stub in `find ${ATTACHDIR} -maxdepth 1 -name \*.txt`; do
+for stub in `find ${ATTACHDIR} -name \*.txt`; do
 
-    # for TXT, order number should be in the subject line
-    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|V220|VM)-[[:alnum:]]+"`
-    ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}' | sed 's/-[^-]*$//'`
-    MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/#[^#]*$//'`
+    revoke_stub "${stub}"
 
-    process_stub "${stub}"
-
-    STUB_RESULT=$?
-
-    # processing corresponding LIC attachments (partner licenses)
-    LICENSE_FILE=`echo "${stub}" | sed 's/.txt$/.lic/'`
-    if [ -f "${LICENSE_FILE}" ]; then
-        if [ ${STUB_RESULT} -ne 0 ]; then
-            echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> REASON <Processing of terminal stub failed>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-        else
-            process_license "${LICENSE_FILE}"
-        fi
-    fi
 done
 
+############################################################################
+# begin processing lic attachments
+############################################################################
+for license in `find ${ATTACHDIR} -name \*.lic`; do
+
+    revoke_license "${license}"
+
+done
 
 ############################################################################
 # prepare response
@@ -427,7 +278,7 @@ Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 Content-Type: text/plain; charset=utf-8
 Content-Transfer-Encoding: 7bit
 
-We have received and processed your license import request.
+We have received and processed your license revoke request.
 Your request has been assigned the following ID:
 
     ${REQUEST_ID}
@@ -436,9 +287,9 @@ Results from your request:
 
 EOF-${REQUEST_ID}
 
-if [ -f "${REQDIR}/${REQUEST_ID}/imported.log" ]; then
-    echo "[IMPORTED]" >> "${REQDIR}/${REQUEST_ID}/response"
-    cat "${REQDIR}/${REQUEST_ID}/imported.log" >> "${REQDIR}/${REQUEST_ID}/response"
+if [ -f "${REQDIR}/${REQUEST_ID}/revoked.log" ]; then
+    echo "[REVOKED]" >> "${REQDIR}/${REQUEST_ID}/response"
+    cat "${REQDIR}/${REQUEST_ID}/revoked.log" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
 fi
@@ -450,8 +301,8 @@ if [ -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
     echo >> "${REQDIR}/${REQUEST_ID}/response"
 fi
 
-if [ ! -f "${REQDIR}/${REQUEST_ID}/imported.log" -a ! -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
-    echo "-- No valid license file found --" >> "${REQDIR}/${REQUEST_ID}/response"
+if [ ! -f "${REQDIR}/${REQUEST_ID}/revoked.log" -a ! -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
+    echo "-- No valid terminal stub or license file found --" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
 fi
