@@ -1,0 +1,5 @@
+#!/bin/sh
+BASEDIR=/home/vivipos/workspace/LICENSES
+
+fetchmail -f $BASEDIR/fetchmailrc-revoke -N -d0 --nosyslog -v -m "/usr/bin/procmail -m FROM=%F TO=%T SUBJECT=%s $BASEDIR/procmailrc-revoke"
+

@@ -21,6 +21,12 @@ REPLY_SUBJECT="License import request status"
 
 SDK_PARTNER_ID=VIVIPOS_CORE
 
+STUB_IMPORT_COUNT=0
+LICENSE_IMPORT_COUNT=0
+
+STUB_REJECT_COUNT=0
+LICENSE_REJECT_COUNT=0
+
 
 ############################################################################
 #
@@ -152,6 +158,7 @@ EOF-${REQUEST_ID}
     if [ "$?" -ne 0 ]; then
         echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
         mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${REQDIR}/${REQUEST_ID}/bad-stub-${HARDWARE_SERIAL}"
+        STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
         return 1
     else
 
@@ -160,9 +167,11 @@ EOF-${REQUEST_ID}
         if [ "$?" -ne 0 ]; then
             echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
             mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${REQDIR}/${REQUEST_ID}/failed-stub-${HARDWARE_SERIAL}"
+            STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
             return 1
         else
             echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB>" >> "${REQDIR}/${REQUEST_ID}/imported.log"
+            STUB_IMPORT_COUNT=$((STUB_IMPORT_COUNT+1))
         fi
 
     fi
@@ -194,7 +203,7 @@ validate_license() {
 
     local KEY_LEN=`echo -n "${PARTNER_KEY}" | wc -c`
     if [ ${KEY_LEN} -ne 76 ]; then
-	REASON="License key length is not 77 bytes (${KEY_LEN})"
+	REASON="License key length is not 76 bytes (${KEY_LEN})"
 	return 1
     fi
 
@@ -292,6 +301,8 @@ process_license() {
 	validate_license "${PARTNER_ID}" "${PARTNER_KEY}"
 	if [ "$?" -ne 0 ]; then
 	    echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
+
 	    echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 	    echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 	    echo >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
@@ -304,11 +315,14 @@ process_license() {
 	    store_license "${license_stub}" "${ORDER_NO}" "${PARTNER_ID}" "${PARTNER_KEY}" "${EXPIRE_DATE}"
 	    if [ "$?" -ne 0 ]; then
 		echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
+
 		echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 		echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 		echo >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 	    else
 		echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}>" >> "${REQDIR}/${REQUEST_ID}/imported.log"
+                LICENSE_IMPORT_COUNT=$((LICENSE_IMPORT_COUNT+1))
 	    fi
 	fi
     done
@@ -387,6 +401,7 @@ for f in `find ${ATTACHDIR} -name \*.rar`; do
         if [ -f "${LICENSE_FILE}" ]; then
             if [ ${STUB_RESULT} -ne 0 ]; then
                 echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> REASON <Processing of terminal stub failed>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
             else
                 process_license "${LICENSE_FILE}"
             fi
@@ -448,12 +463,16 @@ if [ -f "${REQDIR}/${REQUEST_ID}/imported.log" ]; then
     echo "[IMPORTED]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/imported.log" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
+    echo "TOTAL: $((STUB_IMPORT_COUNT + LICENSE_IMPORT_COUNT)), STUBS: ${STUB_IMPORT_COUNT}, PARTNER LICENSES: ${LICENSE_IMPORT_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
 fi
 
 if [ -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
     echo "[REJECTED]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/rejected.log" >> "${REQDIR}/${REQUEST_ID}/response"
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
+    echo "TOTAL: $((STUB_REJECT_COUNT + LICENSE_REJECT_COUNT)), STUBS: ${STUB_REJECT_COUNT}, PARTNER LICENSES: ${LICENSE_REJECT_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
 fi

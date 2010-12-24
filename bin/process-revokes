@@ -19,6 +19,14 @@ REPLY_SUBJECT="License revoke request status"
 
 SDK_PARTNER_ID=VIVIPOS_CORE
 
+STUB_REVOKE_COUNT=0
+SDK_REVOKE_COUNT=0
+LICENSE_REVOKE_COUNT=0
+
+STUB_REJECT_COUNT=0
+SDK_REJECT_COUNT=0
+LICENSE_REJECT_COUNT=0
+
 
 ############################################################################
 #
@@ -33,18 +41,19 @@ SDK_PARTNER_ID=VIVIPOS_CORE
 revoke_stub() {
 
     local stub=$1
-    local FILE_NAME=`basename "$stub"`
+    local FILE_NAME=`basename "${stub}"`
 
     # import stub details into environment
     eval `awk -F"=" '$1 ~ /[A-Za-z0-9_]+/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
 
     # check if stub exists
     SQL="select count(*) from Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}'"
-    COUNT=`echo "$SQL" | mysql -N vivipos`
+    COUNT=`echo "${SQL}" | mysql -N vivipos`
 
     if [ $COUNT -eq 0 ]; then
         REASON="No valid [${SDK_PARTNER_ID}] license found"
 	echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+        STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
     else
 
 	# attempt to move revoked licenses from Licenses into Revoked
@@ -93,47 +102,145 @@ COMMIT;
 EOF-${REQUEST_ID}
 
 	if [ $? -ne 0 ]; then
-	    REASON="Database error encountered while revoking license ($?)"
+	    REASON="Database error encountered while revoking license(s) ($?)"
 	    echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
 	else
 	    # check if license(s) successfully revoked
-	    SQL="select count(*) from Revokes where terminal_stub='${license_stub}' and revoke_request_id='${REQUEST_ID}' and revoke_type='STUB'"
-	    COUNT=`echo "$SQL" | mysql -N vivipos`
+	    SQL="select count(*) from Revokes where revoke_request_id='${REQUEST_ID}' and terminal_stub='${license_stub}' and revoke_type='STUB'"
+	    COUNT=`echo "${SQL}" | mysql -N vivipos`
 
 	    if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
-		REASON="Database error encountered while verifying revoked license ($?)"
+		REASON="Database error encountered while verifying revoked license(s) ($?)"
 		echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
 	    else
-		echo "TYPE <STUB> FILE <${FILE_NAME}> COUNT <${COUNT}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
+		echo "TYPE <STUB> FILE <${FILE_NAME}> LICENSE COUNT <${COUNT}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
+                STUB_REVOKE_COUNT=$((STUB_REVOKE_COUNT+1))
 	    fi
 	fi
     fi
 }
+REVOKE_STUB=
 
 ############################################################################
 #
-# revoke_sdk_key
+# revoke_sdk_license
 #
-# revoke license identified by its sdk key
+# revoke license identified by its sdk license file
 #
-# @args: <stub file>
+# @args: <sdk license file>
 #
 ############################################################################
 
+revoke_sdk_license() {
+
+    local LICENSE_FILE=$1
+    local FILE_NAME=`basename "${LICENSE_FILE}"`
+
+    # read sdk license key into environment
+    local LICENSE_KEY=`cat "${LICENSE_FILE}"`
+
+    # check if license key exists
+    SQL="select count(*) from Licenses where license_key='${LICENSE_KEY}' and partner_id='${SDK_PARTNER_ID}'"
+    COUNT=`echo "${SQL}" | mysql -N vivipos`
+
+    if [ $COUNT -eq 0 ]; then
+        REASON="No valid [${SDK_PARTNER_ID}] license found"
+	echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+        SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
+    elif [ $COUNT -gt 1 ]; then
+        REASON="Multiple matching [${SDK_PARTNER_ID}] licenses found"
+	echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+        SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
+    else
+        # retrieve terminal stub
+        SQL="select terminal_stub FROM Licenses where license_key='${LICENSE_KEY}' and partner_id='${SDK_PARTNER_ID}'"
+        TERMINAL_STUB=`echo "${SQL}" | mysql -N vivipos`
+
+	# attempt to move revoked licenses from Licenses into Revoked
+cat << EOF-${REQUEST_ID} | mysql vivipos
+BEGIN;
+
+INSERT INTO Revokes(terminal_stub,
+		    partner_id,
+		    request_id,
+		    serial_number,
+		    license_key,
+		    expire_date,
+		    signed_by,
+		    order_number,
+		    created,
+		    created_by,
+		    create_request_id,
+		    update_count,
+		    revoked,
+		    revoked_by,
+		    revoke_type,
+		    revoke_request_id)
+    SELECT terminal_stub,
+	   partner_id,
+	   request_id,
+	   serial_number,
+	   license_key,
+	   expire_date,
+	   signed_by,
+	   order_number,
+	   created,
+	   created_by,
+	   create_request_id,
+	   update_count,
+	   NOW(),
+	   '${SENDER}',
+	   'SDK LICENSE',
+	   '${REQUEST_ID}'
+	FROM Licenses
+	WHERE terminal_stub = '${TERMINAL_STUB}';
+
+    DELETE FROM Licenses WHERE terminal_stub = '${TERMINAL_STUB}';
+
+    COMMIT;
+
+EOF-${REQUEST_ID}
+
+	if [ $? -ne 0 ]; then
+	    REASON="Database error encountered while revoking license ($?)"
+	    echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
+	else
+	    # check if license(s) successfully revoked
+	    SQL="select count(*) from Revokes where revoke_request_id='${REQUEST_ID}' and terminal_stub='${TERMINAL_STUB}' and revoke_type='SDK LICENSE'"
+	    COUNT=`echo "${SQL}" | mysql -N vivipos`
+
+	    if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
+		REASON="Database error encountered while verifying revoked license(s) ($?)"
+		echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
+	    else
+		echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> LICENSE COUNT <${COUNT}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
+                SDK_REVOKE_COUNT=$((SDK_REVOKE_COUNT+1))
+	    fi
+	fi
+    fi
+}
+REVOKE_SDK_LICENSE=
+
 ############################################################################
 #
-# process_license
+# revoke_partner_license
 #
-# process partner license file
+# revoke licenses identified in the partner license file
 #
 # @args: <partner license file>
 #
 ############################################################################
 
-process_license() {
+revoke_partner_license() {
 
     local LICENSE_FILE=$1
+    local FILE_NAME=`basename "${LICENSE_FILE}"`
 
+    # read partner licenses from file
     LICENSES=`sed -n '
 		# extract partner ID
 		/^\[.*\]/, /^signed_key=/ {
@@ -152,37 +259,116 @@ process_license() {
 		' < "${LICENSE_FILE}"`
 
     for license in ${LICENSES}; do
+
 	PARTNER_ID=`echo "${license}" | sed -n 's/^\([^=]*\)=.*$/\1/;p'`
 	PARTNER_KEY=`echo "${license}" | sed -n 's/^[^=]*=\(.*$\)/\1/;p'`
 
-	# log output
-	echo "${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+        # check if license key exists
+        SQL="select count(*) from Licenses where license_key='${PARTNER_KEY}' and partner_id='${PARTNER_ID}'"
+        COUNT=`echo "${SQL}" | mysql -N vivipos`
 
-	# are data valid?
-	validate_license "${PARTNER_ID}" "${PARTNER_KEY}"
-	if [ "$?" -ne 0 ]; then
-	    echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-	    echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-	    echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-	    echo >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-	else
+        if [ $COUNT -eq 0 ]; then
+            REASON="No valid [${PARTNER_ID}] license found"
+            echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
+        elif [ $COUNT -gt 1 ]; then
+            REASON="Multiple matching [${PARTNER_ID}] licenses found"
+            echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
+        else
 
-	    # extract expire date
-	    EXPIRE_DATE=`${PARTNER_TOOL} -c "${LICENSE_FILE}" -l | grep -E -e "^${PARTNER_ID}[[:space:]]" | awk -F" " '{print $2}'`
+            # attempt to move revoked licenses from Licenses into Revoked
+        cat << EOF-${REQUEST_ID} | mysql vivipos
+            BEGIN;
 
-	    # attempt to insert into DB
-	    store_license "${license_stub}" "${ORDER_NO}" "${PARTNER_ID}" "${PARTNER_KEY}" "${EXPIRE_DATE}"
-	    if [ "$?" -ne 0 ]; then
-		echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-		echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-		echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-		echo >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-	    else
-		echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}>" >> "${REQDIR}/${REQUEST_ID}/imported.log"
-	    fi
-	fi
+            INSERT INTO Revokes(terminal_stub,
+                                partner_id,
+                                request_id,
+                                serial_number,
+                                license_key,
+                                expire_date,
+                                signed_by,
+                                order_number,
+                                created,
+                                created_by,
+                                create_request_id,
+                                update_count,
+                                revoked,
+                                revoked_by,
+                                revoke_type,
+                                revoke_request_id)
+                SELECT terminal_stub,
+                       partner_id,
+                       request_id,
+                       serial_number,
+                       license_key,
+                       expire_date,
+                       signed_by,
+                       order_number,
+                       created,
+                       created_by,
+                       create_request_id,
+                       update_count,
+                       NOW(),
+                       '${SENDER}',
+                       'PARTNER LICENSE',
+                       '${REQUEST_ID}'
+                    FROM Licenses
+                    WHERE terminal_stub = (SELECT terminal_stub FROM Licenses where license_key='${PARTNER_KEY}' and partner_id='${PARTNER_ID}');
+
+            DELETE FROM Licenses WHERE license_key='${PARTNER_KEY}' and partner_id='${PARTNER_ID}';
+
+            COMMIT;
+
+EOF-${REQUEST_ID}
+
+            if [ $? -ne 0 ]; then
+                REASON="Database error encountered while revoking license for [${PARTNER_ID}] ($?)"
+                echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
+            else
+                # check if license(s) successfully revoked
+                SQL="select count(*) from Revokes where revoke_request_id='${REQUEST_ID}' and license_key='${PARTNER_KEY}' and revoke_type='PARTNER LICENSE'"
+                COUNT=`echo "${SQL}" | mysql -N vivipos`
+
+                if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
+                    REASON="Database error encountered while verifying revoked license for [${PARTNER_ID}] ($?)"
+                    echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                    LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
+                else
+                    echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> PARTNER <${PARTNER_ID}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
+                    LICENSE_REVOKE_COUNT=$((LICENSE_REVOKE_COUNT+1))
+                fi
+            fi
+        fi
     done
 }
+REVOKE_PARTNER_LICENSE=
+
+############################################################################
+#
+# revoke_license
+#
+# revoke license identified by the content of the input file, which may be
+# a SDK license file or a partner licens file
+#
+# @args: <license file>
+#
+############################################################################
+
+revoke_license() {
+
+    local LICENSE_FILE=$1
+    local SIZE=`stat -c %s "${LICENSE_FILE}"`
+
+    # if SIZE = 128, then treat file as SDK license file
+    if [ $SIZE -eq 128 ]; then
+        revoke_sdk_license "${LICENSE_FILE}"
+    else
+        revoke_partner_license "${LICENSE_FILE}"
+    fi
+}
+REVOKE_LICENSE=
 
 ############################################################################
 #
@@ -247,20 +433,20 @@ for f in `find ${ATTACHDIR} -name \*.rar`; do
 done
 
 ############################################################################
-# begin processing stub attachments
-############################################################################
-for stub in `find ${ATTACHDIR} -name \*.txt`; do
-
-    revoke_stub "${stub}"
-
-done
-
-############################################################################
 # begin processing lic attachments
 ############################################################################
 for license in `find ${ATTACHDIR} -name \*.lic`; do
 
     revoke_license "${license}"
+
+done
+
+############################################################################
+# begin processing stub attachments
+############################################################################
+for stub in `find ${ATTACHDIR} -name \*.txt`; do
+
+    revoke_stub "${stub}"
 
 done
 
@@ -291,12 +477,16 @@ if [ -f "${REQDIR}/${REQUEST_ID}/revoked.log" ]; then
     echo "[REVOKED]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/revoked.log" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
+    echo "TOTAL: $((STUB_REVOKE_COUNT + SDK_REVOKE_COUNT + LICENSE_IMPORT_COUNT)), STUBS: ${STUB_REVOKE_COUNT}, SDK LICENSES: ${SDK_REVOKE_COUNT}, PARTNER LICENSES: ${LICENSE_REVOKE_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
 fi
 
 if [ -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
     echo "[REJECTED]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/rejected.log" >> "${REQDIR}/${REQUEST_ID}/response"
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
+    echo "TOTAL: $((STUB_REJECT_COUNT + SDK_REJECT_COUNT + LICENSE_REJECT_COUNT)), STUBS: ${STUB_REJECT_COUNT}, SDK LICENSES: ${SDK_REJECT_COUNT}, PARTNER LICENSES: ${LICENSE_REJECT_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
 fi

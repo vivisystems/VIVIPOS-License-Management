@@ -1,0 +1,9 @@
+# Configuration created Thu Dec 16 10:58:12 2010 by fetchmailconf 1.54 $Revision: 5165 $
+set syslog
+set postmaster "vivipos"
+set nobouncemail
+set no spambounce
+set properties ""
+poll pop.gmail.com port 995 with proto POP3
+user license-revoke@vivipos.com.tw there with password "new;start1" is vivipos here options flush no rewrite ssl sslcertck fetchall
+sslfingerprint "6B:C4:63:05:87:1E:72:88:ED:81:C5:A2:51:6B:B7:B6"
