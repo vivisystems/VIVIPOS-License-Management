@@ -17,7 +17,7 @@ REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License revoke request status"
 
-SDK_PARTNER_ID=VIVIPOS_CORE
+SDK_PARTNER_ID="VIVIPOS SDK"
 
 STUB_REVOKE_COUNT=0
 SDK_REVOKE_COUNT=0
@@ -70,7 +70,7 @@ INSERT INTO Revokes(terminal_stub,
 		    order_number,
 		    created,
 		    created_by,
-		    create_request_id,
+		    import_request_id,
 		    update_count,
 		    revoked,
 		    revoked_by,
@@ -86,7 +86,7 @@ INSERT INTO Revokes(terminal_stub,
 	   order_number,
 	   created,
 	   created_by,
-	   create_request_id,
+	   import_request_id,
 	   update_count,
 	   NOW(),
 	   '${SENDER}',
@@ -172,7 +172,7 @@ INSERT INTO Revokes(terminal_stub,
 		    order_number,
 		    created,
 		    created_by,
-		    create_request_id,
+		    import_request_id,
 		    update_count,
 		    revoked,
 		    revoked_by,
@@ -188,7 +188,7 @@ INSERT INTO Revokes(terminal_stub,
 	   order_number,
 	   created,
 	   created_by,
-	   create_request_id,
+	   import_request_id,
 	   update_count,
 	   NOW(),
 	   '${SENDER}',
@@ -291,7 +291,7 @@ revoke_partner_license() {
                                 order_number,
                                 created,
                                 created_by,
-                                create_request_id,
+                                import_request_id,
                                 update_count,
                                 revoked,
                                 revoked_by,
@@ -307,7 +307,7 @@ revoke_partner_license() {
                        order_number,
                        created,
                        created_by,
-                       create_request_id,
+                       import_request_id,
                        update_count,
                        NOW(),
                        '${SENDER}',
@@ -456,7 +456,7 @@ done
 cat > "${REQDIR}/${REQUEST_ID}/response" <<EOF-${REQUEST_ID}
 From: ${REPLY_SENDER}
 To: ${SENDER}
-Subject: ${REPLY_SUBJECT}
+Subject: ${REPLY_SUBJECT} [ID: ${REQUEST_ID}]
 Reply-To: ${REPLY_REPLY_TO}
 Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 
@@ -474,7 +474,20 @@ Results from your request:
 EOF-${REQUEST_ID}
 
 if [ -f "${REQDIR}/${REQUEST_ID}/revoked.log" ]; then
-    echo "[REVOKED]" >> "${REQDIR}/${REQUEST_ID}/response"
+
+    echo "[LICENSE(S) REVOKED]" >> "${REQDIR}/${REQUEST_ID}/response"
+
+cat <<EOF-${REQUEST_ID} | mysql -N vivipos >> "${REQDIR}/${REQUEST_ID}/response"
+SELECT r.order_number, t.serial_number, t.model, r.partner_id, r.serial_number, r.signed_by, FROM_UNIXTIME( r.expire_date )
+FROM Revokes r, Terminals t
+WHERE t.terminal_stub = r.terminal_stub AND r.revoke_request_id = '${REQUEST_ID}'
+ORDER BY r.order_number, t.serial_number, r.partner_id, r.serial_number
+LIMIT 0 , 300
+EOF-${REQUEST_ID}
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
+
+    echo "[REVOKE LOG]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/revoked.log" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo "TOTAL: $((STUB_REVOKE_COUNT + SDK_REVOKE_COUNT + LICENSE_IMPORT_COUNT)), STUBS: ${STUB_REVOKE_COUNT}, SDK LICENSES: ${SDK_REVOKE_COUNT}, PARTNER LICENSES: ${LICENSE_REVOKE_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
@@ -483,7 +496,7 @@ if [ -f "${REQDIR}/${REQUEST_ID}/revoked.log" ]; then
 fi
 
 if [ -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
-    echo "[REJECTED]" >> "${REQDIR}/${REQUEST_ID}/response"
+    echo "[REJECTED LOG]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/rejected.log" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo "TOTAL: $((STUB_REJECT_COUNT + SDK_REJECT_COUNT + LICENSE_REJECT_COUNT)), STUBS: ${STUB_REJECT_COUNT}, SDK LICENSES: ${SDK_REJECT_COUNT}, PARTNER LICENSES: ${LICENSE_REJECT_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"

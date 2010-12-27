@@ -3,7 +3,7 @@
 -- http://www.phpmyadmin.net
 --
 -- Host: localhost
--- Generation Time: Dec 23, 2010 at 01:09 AM
+-- Generation Time: Dec 27, 2010 at 04:12 PM
 -- Server version: 5.1.41
 -- PHP Version: 5.3.2-1ubuntu4.5
 
@@ -24,12 +24,8 @@ SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO";
 --
 -- Table structure for table `Downloads`
 --
--- Creation: Dec 22, 2010 at 08:53 PM
--- Last update: Dec 22, 2010 at 08:53 PM
---
 
-DROP TABLE IF EXISTS `Downloads`;
-CREATE TABLE `Downloads` (
+CREATE TABLE IF NOT EXISTS `Downloads` (
   `download_id` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `terminal_stub` varchar(128) NOT NULL,
   `partner_id` varchar(128) NOT NULL,
@@ -43,17 +39,18 @@ CREATE TABLE `Downloads` (
   KEY `license_downloaded` (`terminal_stub`,`partner_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
 
+--
+-- Dumping data for table `Downloads`
+--
+
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `Licenses`
 --
--- Creation: Dec 23, 2010 at 12:20 AM
--- Last update: Dec 23, 2010 at 01:01 AM
---
 
-DROP TABLE IF EXISTS `Licenses`;
-CREATE TABLE `Licenses` (
+CREATE TABLE IF NOT EXISTS `Licenses` (
   `terminal_stub` varchar(128) NOT NULL,
   `partner_id` varchar(128) NOT NULL,
   `request_id` int(36) unsigned DEFAULT NULL,
@@ -64,7 +61,7 @@ CREATE TABLE `Licenses` (
   `order_number` varchar(36) DEFAULT NULL,
   `created` datetime NOT NULL,
   `created_by` varchar(128) NOT NULL,
-  `create_request_id` varchar(128) DEFAULT NULL,
+  `import_request_id` varchar(128) DEFAULT NULL,
   `update_count` int(11) DEFAULT '0',
   PRIMARY KEY (`terminal_stub`,`partner_id`),
   KEY `partner_issues_licenses` (`partner_id`),
@@ -75,17 +72,18 @@ CREATE TABLE `Licenses` (
   KEY `serial_number` (`serial_number`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
+--
+-- Dumping data for table `Licenses`
+--
+
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `Partners`
 --
--- Creation: Dec 22, 2010 at 08:53 PM
--- Last update: Dec 22, 2010 at 09:08 PM
---
 
-DROP TABLE IF EXISTS `Partners`;
-CREATE TABLE `Partners` (
+CREATE TABLE IF NOT EXISTS `Partners` (
   `partner_id` varchar(128) NOT NULL,
   `name` varchar(128) NOT NULL,
   `email` varchar(128) NOT NULL,
@@ -96,17 +94,20 @@ CREATE TABLE `Partners` (
   UNIQUE KEY `email` (`email`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
+--
+-- Dumping data for table `Partners`
+--
+
+INSERT INTO `Partners` (`partner_id`, `name`, `email`, `created_on`, `created_by`) VALUES
+('VIVIPOS SDK', 'VIVIPOS App Engine', 'info@vivipos.com.tw', '2010-12-23 10:52:23', 'Irving Hsu');
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `Requests`
 --
--- Creation: Dec 22, 2010 at 08:53 PM
--- Last update: Dec 22, 2010 at 08:53 PM
---
 
-DROP TABLE IF EXISTS `Requests`;
-CREATE TABLE `Requests` (
+CREATE TABLE IF NOT EXISTS `Requests` (
   `request_id` int(36) unsigned NOT NULL AUTO_INCREMENT,
   `customer_name` varchar(128) NOT NULL,
   `email` varchar(128) NOT NULL,
@@ -127,17 +128,58 @@ CREATE TABLE `Requests` (
   PRIMARY KEY (`request_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;
 
+--
+-- Dumping data for table `Requests`
+--
+
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `Revokes`
+--
+
+CREATE TABLE IF NOT EXISTS `Revokes` (
+  `terminal_stub` varchar(128) NOT NULL,
+  `partner_id` varchar(128) NOT NULL,
+  `request_id` int(36) unsigned DEFAULT NULL,
+  `serial_number` varchar(128) NOT NULL,
+  `license_key` varchar(128) DEFAULT NULL,
+  `expire_date` timestamp NULL DEFAULT NULL,
+  `signed_by` varchar(128) NOT NULL,
+  `order_number` varchar(36) DEFAULT NULL,
+  `created` datetime NOT NULL,
+  `created_by` varchar(128) NOT NULL,
+  `import_request_id` varchar(128) DEFAULT NULL,
+  `update_count` int(11) DEFAULT '0',
+  `revoked` datetime NOT NULL,
+  `revoked_by` varchar(128) NOT NULL,
+  `revoke_type` varchar(128) NOT NULL,
+  `revoke_request_id` varchar(128) NOT NULL,
+  KEY `partner_issues_licenses` (`partner_id`),
+  KEY `request_generates_licenses` (`request_id`),
+  KEY `license_key` (`license_key`),
+  KEY `order_number` (`order_number`),
+  KEY `created_by` (`created_by`),
+  KEY `serial_number` (`serial_number`),
+  KEY `terminal_stub_and_partner_id` (`terminal_stub`,`partner_id`),
+  KEY `revoked_by` (`revoked_by`),
+  KEY `revoke_type` (`revoke_type`),
+  KEY `revoke_request_id` (`revoke_request_id`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `Revokes`
+--
+
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `Terminals`
 --
--- Creation: Dec 22, 2010 at 11:18 PM
--- Last update: Dec 23, 2010 at 01:01 AM
---
 
-DROP TABLE IF EXISTS `Terminals`;
-CREATE TABLE `Terminals` (
+CREATE TABLE IF NOT EXISTS `Terminals` (
   `terminal_stub` varchar(128) NOT NULL,
   `serial_number` varchar(128) DEFAULT NULL,
   `dallas_key` varchar(128) DEFAULT NULL,
@@ -147,8 +189,8 @@ CREATE TABLE `Terminals` (
   `model` varchar(128) DEFAULT NULL,
   `created` datetime NOT NULL,
   `created_by` varchar(128) NOT NULL,
-  `create_request_id` varchar(128) DEFAULT NULL,
-  `generated_by` varchar(128) NOT NULL,
+  `signed_by` varchar(128) NOT NULL,
+  `import_request_id` varchar(128) DEFAULT NULL,
   `update_count` int(11) NOT NULL DEFAULT '0',
   PRIMARY KEY (`terminal_stub`),
   UNIQUE KEY `serial_number` (`serial_number`),
@@ -156,5 +198,10 @@ CREATE TABLE `Terminals` (
   KEY `vendor_name` (`vendor_name`),
   KEY `model` (`model`),
   KEY `created_by` (`created_by`),
-  KEY `generated_by` (`generated_by`)
+  KEY `signed_by` (`signed_by`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+--
+-- Dumping data for table `Terminals`
+--
+

@@ -19,7 +19,7 @@ REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License import request status"
 
-SDK_PARTNER_ID=VIVIPOS_CORE
+SDK_PARTNER_ID="VIVIPOS SDK"
 
 STUB_IMPORT_COUNT=0
 LICENSE_IMPORT_COUNT=0
@@ -97,13 +97,13 @@ fi
 cat | mysql vivipos <<EOF-${REQUEST_ID}
 BEGIN;
 
-INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, create_request_id, generated_by)
+INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, import_request_id, signed_by)
 values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
-ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_number), created_by=VALUES(created_by), create_request_id=VALUES(create_request_id), generated_by=VALUES(generated_by), update_count=update_count+1;
+ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_number), created_by=VALUES(created_by), import_request_id=VALUES(import_request_id), signed_by=VALUES(signed_by), update_count=update_count+1;
 
-INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, create_request_id)
+INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, import_request_id)
 values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), serial_number=VALUES(serial_number), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), serial_number=VALUES(serial_number), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
 
 COMMIT;
 EOF-${REQUEST_ID}
@@ -239,9 +239,9 @@ store_license() {
 
 # insert entry into Licenses
 cat <<EOF-${REQUEST_ID} | mysql vivipos
-INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, order_number, signed_by, created_by, created, create_request_id)
+INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, order_number, signed_by, created_by, created, import_request_id)
 values ('${TERMINAL_STUB}', '${PARTNER_ID}', '${PARTNER_KEY}', '${EXPIRE_DATE}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), create_request_id='${REQUEST_ID}', update_count=update_count+1;
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
 EOF-${REQUEST_ID}
 
             if [ $? -ne 0 ]; then
@@ -442,7 +442,7 @@ done
 cat > "${REQDIR}/${REQUEST_ID}/response" <<EOF-${REQUEST_ID}
 From: ${REPLY_SENDER}
 To: ${SENDER}
-Subject: ${REPLY_SUBJECT}
+Subject: ${REPLY_SUBJECT} [ID: ${REQUEST_ID}]
 Reply-To: ${REPLY_REPLY_TO}
 Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 
@@ -460,7 +460,20 @@ Results from your request:
 EOF-${REQUEST_ID}
 
 if [ -f "${REQDIR}/${REQUEST_ID}/imported.log" ]; then
-    echo "[IMPORTED]" >> "${REQDIR}/${REQUEST_ID}/response"
+
+    echo "[LICENSE(S) IMPORTED]" >> "${REQDIR}/${REQUEST_ID}/response"
+
+cat <<EOF-${REQUEST_ID} | mysql -N vivipos >> "${REQDIR}/${REQUEST_ID}/response" 
+SELECT l.order_number, t.serial_number, t.model, l.partner_id, l.serial_number, l.signed_by, FROM_UNIXTIME( l.expire_date )
+FROM Licenses l, Terminals t
+WHERE t.terminal_stub = l.terminal_stub AND l.import_request_id = '${REQUEST_ID}'
+ORDER BY l.order_number, t.serial_number, l.partner_id, l.serial_number
+LIMIT 0 , 300
+EOF-${REQUEST_ID}
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
+    echo >> "${REQDIR}/${REQUEST_ID}/response"
+
+    echo "[IMPORT LOG]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/imported.log" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo "TOTAL: $((STUB_IMPORT_COUNT + LICENSE_IMPORT_COUNT)), STUBS: ${STUB_IMPORT_COUNT}, PARTNER LICENSES: ${LICENSE_IMPORT_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
@@ -469,7 +482,7 @@ if [ -f "${REQDIR}/${REQUEST_ID}/imported.log" ]; then
 fi
 
 if [ -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
-    echo "[REJECTED]" >> "${REQDIR}/${REQUEST_ID}/response"
+    echo "[REJECTED LOG]" >> "${REQDIR}/${REQUEST_ID}/response"
     cat "${REQDIR}/${REQUEST_ID}/rejected.log" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo "TOTAL: $((STUB_REJECT_COUNT + LICENSE_REJECT_COUNT)), STUBS: ${STUB_REJECT_COUNT}, PARTNER LICENSES: ${LICENSE_REJECT_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
