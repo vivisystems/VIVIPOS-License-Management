@@ -1,5 +1,5 @@
 #!/bin/sh
 BASEDIR=`dirname $0`/..
 
-fetchmail -f $BASEDIR/fetchmailrc-import -N -d0 --nosyslog -v -m "/usr/bin/procmail -m FROM=%F TO=%T SUBJECT=%s $BASEDIR/procmailrc-import"
+fetchmail -f $BASEDIR/fetchmailrc-import -N -d0 --syslog -v -m "/usr/bin/procmail -m FROM=%F TO=%T SUBJECT=%s BASEDIR='$BASEDIR' $BASEDIR/procmailrc-import"
 

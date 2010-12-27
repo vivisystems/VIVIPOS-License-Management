@@ -1,5 +1,3 @@
-BASEDIR=/home/vivipos/workspace/LICENSES
-
 PATH=/bin:usr/bin:$BASEDIR/bin
 
 BINDIR=$BASEDIR/bin
