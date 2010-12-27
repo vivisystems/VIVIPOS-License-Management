@@ -48,7 +48,7 @@ revoke_stub() {
 
     # check if stub exists
     SQL="select count(*) from Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}'"
-    COUNT=`echo "${SQL}" | mysql -N vivipos`
+    COUNT=`echo "${SQL}" | mysql -N Licenses`
 
     if [ $COUNT -eq 0 ]; then
         REASON="No valid [${SDK_PARTNER_ID}] license found"
@@ -57,7 +57,7 @@ revoke_stub() {
     else
 
 	# attempt to move revoked licenses from Licenses into Revoked
-cat << EOF-${REQUEST_ID} | mysql vivipos
+cat << EOF-${REQUEST_ID} | mysql -N Licenses
 BEGIN;
 
 INSERT INTO Revokes(terminal_stub,
@@ -108,7 +108,7 @@ EOF-${REQUEST_ID}
 	else
 	    # check if license(s) successfully revoked
 	    SQL="select count(*) from Revokes where revoke_request_id='${REQUEST_ID}' and terminal_stub='${license_stub}' and revoke_type='STUB'"
-	    COUNT=`echo "${SQL}" | mysql -N vivipos`
+	    COUNT=`echo "${SQL}" | mysql -N Licenses`
 
 	    if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
 		REASON="Database error encountered while verifying revoked license(s) ($?)"
@@ -143,7 +143,7 @@ revoke_sdk_license() {
 
     # check if license key exists
     SQL="select count(*) from Licenses where license_key='${LICENSE_KEY}' and partner_id='${SDK_PARTNER_ID}'"
-    COUNT=`echo "${SQL}" | mysql -N vivipos`
+    COUNT=`echo "${SQL}" | mysql -N Licenses`
 
     if [ $COUNT -eq 0 ]; then
         REASON="No valid [${SDK_PARTNER_ID}] license found"
@@ -156,10 +156,10 @@ revoke_sdk_license() {
     else
         # retrieve terminal stub
         SQL="select terminal_stub FROM Licenses where license_key='${LICENSE_KEY}' and partner_id='${SDK_PARTNER_ID}'"
-        TERMINAL_STUB=`echo "${SQL}" | mysql -N vivipos`
+        TERMINAL_STUB=`echo "${SQL}" | mysql -N Licenses`
 
 	# attempt to move revoked licenses from Licenses into Revoked
-cat << EOF-${REQUEST_ID} | mysql vivipos
+cat << EOF-${REQUEST_ID} | mysql -N Licenses
 BEGIN;
 
 INSERT INTO Revokes(terminal_stub,
@@ -210,7 +210,7 @@ EOF-${REQUEST_ID}
 	else
 	    # check if license(s) successfully revoked
 	    SQL="select count(*) from Revokes where revoke_request_id='${REQUEST_ID}' and terminal_stub='${TERMINAL_STUB}' and revoke_type='SDK LICENSE'"
-	    COUNT=`echo "${SQL}" | mysql -N vivipos`
+	    COUNT=`echo "${SQL}" | mysql -N Licenses`
 
 	    if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
 		REASON="Database error encountered while verifying revoked license(s) ($?)"
@@ -265,7 +265,7 @@ revoke_partner_license() {
 
         # check if license key exists
         SQL="select count(*) from Licenses where license_key='${PARTNER_KEY}' and partner_id='${PARTNER_ID}'"
-        COUNT=`echo "${SQL}" | mysql -N vivipos`
+        COUNT=`echo "${SQL}" | mysql -N Licenses`
 
         if [ $COUNT -eq 0 ]; then
             REASON="No valid [${PARTNER_ID}] license found"
@@ -278,7 +278,7 @@ revoke_partner_license() {
         else
 
             # attempt to move revoked licenses from Licenses into Revoked
-        cat << EOF-${REQUEST_ID} | mysql vivipos
+        cat << EOF-${REQUEST_ID} | mysql Licenses
             BEGIN;
 
             INSERT INTO Revokes(terminal_stub,
@@ -329,7 +329,7 @@ EOF-${REQUEST_ID}
             else
                 # check if license(s) successfully revoked
                 SQL="select count(*) from Revokes where revoke_request_id='${REQUEST_ID}' and license_key='${PARTNER_KEY}' and revoke_type='PARTNER LICENSE'"
-                COUNT=`echo "${SQL}" | mysql -N vivipos`
+                COUNT=`echo "${SQL}" | mysql -N Licenses`
 
                 if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
                     REASON="Database error encountered while verifying revoked license for [${PARTNER_ID}] ($?)"
@@ -477,7 +477,7 @@ if [ -f "${REQDIR}/${REQUEST_ID}/revoked.log" ]; then
 
     echo "[LICENSE(S) REVOKED]" >> "${REQDIR}/${REQUEST_ID}/response"
 
-cat <<EOF-${REQUEST_ID} | mysql -N vivipos >> "${REQDIR}/${REQUEST_ID}/response"
+cat <<EOF-${REQUEST_ID} | mysql -N Licenses >> "${REQDIR}/${REQUEST_ID}/response"
 SELECT r.order_number, t.serial_number, t.model, r.partner_id, r.serial_number, r.signed_by, FROM_UNIXTIME( r.expire_date )
 FROM Revokes r, Terminals t
 WHERE t.terminal_stub = r.terminal_stub AND r.revoke_request_id = '${REQUEST_ID}'

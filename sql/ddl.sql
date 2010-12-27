@@ -3,7 +3,7 @@
 -- http://www.phpmyadmin.net
 --
 -- Host: localhost
--- Generation Time: Dec 27, 2010 at 04:12 PM
+-- Generation Time: Dec 27, 2010 at 06:25 PM
 -- Server version: 5.1.41
 -- PHP Version: 5.3.2-1ubuntu4.5
 
@@ -16,8 +16,11 @@ SET SQL_MODE="NO_AUTO_VALUE_ON_ZERO";
 /*!40101 SET NAMES utf8 */;
 
 --
--- Database: `vivipos`
+-- Database: `Licenses`
 --
+DROP DATABASE `Licenses`;
+CREATE DATABASE `Licenses` DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+USE `Licenses`;
 
 -- --------------------------------------------------------
 

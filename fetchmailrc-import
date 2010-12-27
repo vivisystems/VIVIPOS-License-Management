@@ -5,5 +5,5 @@ set nobouncemail
 set no spambounce
 set properties ""
 poll pop.gmail.com port 995 with proto POP3
-user license-import@vivipos.com.tw there with password "new;start1" is vivipos here options flush no rewrite ssl sslcertck fetchall
+user license-import@vivipos.com.tw there with password "v6]m.wbJx4j8db" is vivipos here options flush no rewrite ssl sslcertck fetchall
 sslfingerprint "6B:C4:63:05:87:1E:72:88:ED:81:C5:A2:51:6B:B7:B6"

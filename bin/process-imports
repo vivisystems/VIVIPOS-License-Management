@@ -5,6 +5,7 @@
 ############################################################################
 
 PATH=/bin:/usr/bin:/usr/local/bin
+BINDIR=`dirname $0`
 REQDIR=$1
 COUNT=$2
 REQUEST_ID="`date +%Y%m%d`-$((COUNT+1))-`date +%H%M`"
@@ -12,8 +13,8 @@ IFS='
 '
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
-LICENSE_TOOL=/data/vivipos_sdk/DONTRELEASE/getSystemLicense
-PARTNER_TOOL=/data/vivipos_sdk/partners_lic_manager
+LICENSE_TOOL="${BINDIR}/getSystemLicense"
+PARTNER_TOOL="${BINDIR}/partners_lic_manager"
 SMTP_CLIENT=msmtp
 REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
@@ -94,7 +95,7 @@ if [ -n "${MODEL}" ]; then
     UPDATE_MODEL_CLAUSE="model=VALUES(model), "
 fi
 # insert entry into Terminals
-cat | mysql vivipos <<EOF-${REQUEST_ID}
+cat | mysql Licenses <<EOF-${REQUEST_ID}
 BEGIN;
 
 INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, import_request_id, signed_by)
@@ -229,7 +230,7 @@ store_license() {
 
     # check if partner ID exists
     SQL="select count(*) from Partners where partner_id='${PARTNER_ID}'"
-    COUNT=`echo "$SQL" | mysql -N vivipos`
+    COUNT=`echo "$SQL" | mysql -N Licenses`
 
     if [ $? -ne 0 ]; then
         REASON="Failed to retrieve partner information"
@@ -238,7 +239,7 @@ store_license() {
         if [ "$COUNT" = "1" ]; then
 
 # insert entry into Licenses
-cat <<EOF-${REQUEST_ID} | mysql vivipos
+cat <<EOF-${REQUEST_ID} | mysql -N Licenses
 INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, order_number, signed_by, created_by, created, import_request_id)
 values ('${TERMINAL_STUB}', '${PARTNER_ID}', '${PARTNER_KEY}', '${EXPIRE_DATE}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
 ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
@@ -463,7 +464,7 @@ if [ -f "${REQDIR}/${REQUEST_ID}/imported.log" ]; then
 
     echo "[LICENSE(S) IMPORTED]" >> "${REQDIR}/${REQUEST_ID}/response"
 
-cat <<EOF-${REQUEST_ID} | mysql -N vivipos >> "${REQDIR}/${REQUEST_ID}/response" 
+cat <<EOF-${REQUEST_ID} | mysql -N Licenses >> "${REQDIR}/${REQUEST_ID}/response" 
 SELECT l.order_number, t.serial_number, t.model, l.partner_id, l.serial_number, l.signed_by, FROM_UNIXTIME( l.expire_date )
 FROM Licenses l, Terminals t
 WHERE t.terminal_stub = l.terminal_stub AND l.import_request_id = '${REQUEST_ID}'

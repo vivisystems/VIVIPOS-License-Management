@@ -1,6 +1,6 @@
 #!/bin/sh
 
-BASEDIR=/home/vivipos/workspace/LICENSES
+BASEDIR=`dirname $0`/..
 
 rm -f $BASEDIR/log/*
 rm -rf $BASEDIR/request/*
