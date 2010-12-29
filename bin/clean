@@ -6,4 +6,5 @@ rm -f $BASEDIR/log/*
 rm -rf $BASEDIR/request/*
 rm -f /tmp/import.log
 rm -f /tmp/revoke.log
+rm -f /tmp/download.log
 

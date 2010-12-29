@@ -1,0 +1,14 @@
+PATH=/bin:usr/bin:$BASEDIR/bin
+
+BINDIR=$BASEDIR/bin
+REQDIR=$BASEDIR/request
+LOGFILE=$BASEDIR/log/requests-received.`date +%y-%m-%d`
+COUNT=`grep -E -c -e "^  Folder:" "$LOGFILE"`
+
+:0:
+* ^From:.*@tenderapp.com
+| $BINDIR/process-download-responses $REQDIR $COUNT >>/tmp/download-response.log 2>&1
+
+:0:
+* 
+| $BINDIR/process-download-requests $REQDIR $COUNT >>/tmp/download-request.log 2>&1

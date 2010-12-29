@@ -1,0 +1,119 @@
+#!/bin/sh -x
+
+############################################################################
+# set up base environment
+############################################################################
+
+PATH=/bin:/usr/bin:/usr/local/bin
+BINDIR=`dirname $0`
+REQDIR=$1
+COUNT=$2
+REQUEST_ID="`date +%Y%m%d`-$((COUNT+1))-`date +%H%M`"
+IFS='
+'
+
+ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
+SMTP_CLIENT=msmtp
+REPLY_SENDER="VIVIPOS License Service"
+REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
+REPLY_SUBJECT="License download request status"
+
+TENDER_FORWARD_ADDRESS="tender+cb350522af7fc8238b8ec6268087eaf884ce2cd27@tenderapp.com"
+
+SDK_PARTNER_ID="VIVIPOS SDK"
+
+STUB_DOWNLOAD_COUNT=0
+
+STUB_REJECT_COUNT=0
+
+
+############################################################################
+#
+# main
+#
+############################################################################
+
+############################################################################
+# saving request
+############################################################################
+mkdir -p "${ATTACHDIR}"
+env > "${REQDIR}/${REQUEST_ID}/env"
+cat > "${REQDIR}/${REQUEST_ID}/req"
+
+############################################################################
+# extract email headers and content
+############################################################################
+#REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
+REQ_SUBJECT=`sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" | grep -E -e '^Subject:'`
+REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
+REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req"`
+REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
+REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req"`
+
+############################################################################
+# extract multipart boundary
+############################################################################
+REQ_MULTIPART_BOUNDARY=`echo ${REQ_CONTENT_TYPE} | sed -n '/^Content-Type: multipart\/mixed; / {
+s_.*boundary=\(.*\)_\1_
+p
+}'`
+
+if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
+    RES_MULTIPART_BOUNDARY=`uuid`
+else
+    RES_MULTIPART_BOUNDARY="${REQ_MULTIPART_BOUNDARY}"
+fi
+
+############################################################################
+# extract sender from request
+############################################################################
+SENDER=`sed '/^Reply-To:/q; /^From:/h; /./d;g;q' "${REQDIR}/${REQUEST_ID}/req" | sed 's/ *(.*)//; s/>.*//; s/.*[:<] *//'`
+if [ -z "${SENDER}" ]; then
+    SENDER=${FROM}
+fi
+
+############################################################################
+# extract attachments
+############################################################################
+ripmime -i "${REQDIR}/${REQUEST_ID}/req" -d "${ATTACHDIR}" --no-nameless
+
+############################################################################
+# generate email to be forwarded to Tender
+############################################################################
+cat > "${REQDIR}/${REQUEST_ID}/forward" << EOF-${REQUEST_ID}
+From: ${SENDER}
+To: ${TENDER_FORWARD_ADDRESS}
+${REQ_SUBJECT} [ID: ${REQUEST_ID}]
+Reply-To: ${SENDER}
+Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
+
+--${RES_MULTIPART_BOUNDARY}
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Request received via ${REQ_TO}
+
+--------------- Original Request ---------------
+
+--${RES_MULTIPART_BOUNDARY}
+EOF-${REQUEST_ID}
+
+if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
+echo "${REQ_CONTENT_TYPE}" >> "${REQDIR}/${REQUEST_ID}/forward"
+echo >> "${REQDIR}/${REQUEST_ID}/forward"
+fi
+
+cat >> "${REQDIR}/${REQUEST_ID}/forward" <<EOF-${REQUEST_ID}
+${REQ_BODY}
+EOF-${REQUEST_ID}
+
+############################################################################
+# forward request to Tender
+############################################################################
+"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/forward" > "${REQDIR}/${REQUEST_ID}/forward.smtp" 2>&1
+if [ "$?" -ne 0 ]; then
+    mv "${REQDIR}/${REQUEST_ID}/forward" "${REQDIR}/${REQUEST_ID}/forward.unsent"
+else
+    mv "${REQDIR}/${REQUEST_ID}/forward" "${REQDIR}/${REQUEST_ID}/forward.sent"
+fi
+

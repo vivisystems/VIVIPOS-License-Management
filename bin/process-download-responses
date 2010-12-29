@@ -1,0 +1,84 @@
+#!/bin/sh -x
+
+############################################################################
+# set up base environment
+############################################################################
+
+PATH=/bin:/usr/bin:/usr/local/bin
+BINDIR=`dirname $0`
+REQDIR=$1
+COUNT=$2
+REQUEST_ID="`date +%Y%m%d`-$((COUNT+1))-`date +%H%M`"
+IFS='
+'
+
+ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
+SMTP_CLIENT=msmtp
+REPLY_SENDER="VIVIPOS License Service <license-request@vivipos.com.tw>"
+REPLY_REPLY_TO="license-request@vivipos.com.tw"
+REPLY_SUBJECT="License download request status"
+
+SDK_PARTNER_ID="VIVIPOS SDK"
+
+STUB_DOWNLOAD_COUNT=0
+
+STUB_REJECT_COUNT=0
+
+
+############################################################################
+#
+# main
+#
+############################################################################
+
+############################################################################
+# saving request
+############################################################################
+mkdir -p "${ATTACHDIR}"
+env > "${REQDIR}/${REQUEST_ID}/env"
+cat > "${REQDIR}/${REQUEST_ID}/req"
+
+############################################################################
+# extract email headers and content
+############################################################################
+#REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
+REQ_SUBJECT=`sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" | grep -E -e '^Subject: '`
+REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
+REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req"`
+REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
+
+############################################################################
+# extract sender from request
+############################################################################
+SENDER=`sed '/^Reply-To:/q; /^From:/h; /./d;g;q' "${REQDIR}/${REQUEST_ID}/req" | sed 's/ *(.*)//; s/>.*//; s/.*[:<] *//'`
+if [ -z "${SENDER}" ]; then
+    SENDER=${FROM}
+fi
+
+############################################################################
+# generate response to Tender discussion
+############################################################################
+cat > "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
+From: ${REPLY_SENDER}
+To: ${SENDER}
+${REQ_SUBJECT}
+Reply-To: ${REPLY_REPLY_TO}
+
+#resolve
+#ignore
+
+Request resolved
+
+EOF-${REQUEST_ID}
+
+
+############################################################################
+# send response to Tender
+############################################################################
+#"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
+if [ "$?" -ne 0 ]; then
+    mv "${REQDIR}/${REQUEST_ID}/response" "${REQDIR}/${REQUEST_ID}/response.unsent"
+else
+    mv "${REQDIR}/${REQUEST_ID}/response" "${REQDIR}/${REQUEST_ID}/response.sent"
+fi
+
