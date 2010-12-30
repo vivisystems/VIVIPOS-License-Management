@@ -52,20 +52,36 @@ process_stub() {
     license_stub=
     eval `awk -F"=" '$1 ~ /^[A-Za-z0-9_]+$/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
 
-    # retrieve SDK license key
-    local SQL="select license_key FROM Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}' limit 1"
-    local LICENSE_KEY=`echo "${SQL}" | mysql -N Licenses`
-
-    if [ "$?" -ne 0 ]; then
+    # test if license stub is present
+    if [ -z "${license_stub}" ]; then
         ERROR_FLAG=1
-    elif [ -z "${LICENSE_KEY}" ]; then
-        ERROR_FLAG=1
+        echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <Not a valid terminal stub file>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
     else
-        echo -n "${LICENSE_KEY}" > "${LICENSEDIR}/${SDK_KEY_FILE}"
-    fi
 
-    # retrieve partner license key(s)
-    local LICENSES=`cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+	# retrieve SDK license key
+	local SQL="select license_key FROM Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}' limit 1"
+	local LICENSE_KEY=`echo "${SQL}" | mysql -N Licenses`
+
+	if [ "$?" -ne 0 ]; then
+	    ERROR_FLAG=1
+	    echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <Database error while retrieving SDK license>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
+	elif [ -z "${LICENSE_KEY}" ]; then
+	    ERROR_FLAG=1
+	    echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <SDK license not found>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
+	else
+	    echo -n "${LICENSE_KEY}" > "${LICENSEDIR}/${SDK_KEY_FILE}"
+	    echo "FILE <${BASE_NAME}> TYPE <SDK>" >> "${REQDIR}/${REQUEST_ID}/download.log"
+
+	    # record download request
+cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+INSERT into Downloads(terminal_stub, partner_id, ip_address, sdk_version, app_version, license_helper_version, download_request_id, created, created_by)
+    values('${license_stub}', '${SDK_PARTNER_ID}', '${SENDER}', NULL, NULL, NULL, '${REQUEST_ID}', NOW(), '${REQ_TO}')
+EOF-${REQUEST_ID}
+
+	fi
+
+	# retrieve partner license key(s)
+	local LICENSES=`cat <<EOF-${REQUEST_ID} | mysql -N Licenses
 SELECT p.partner_id, p.name, p.email, l.license_key
 FROM Partners p, Licenses l
 WHERE l.terminal_stub = '${license_stub}'
@@ -73,10 +89,23 @@ AND l.partner_id != '${SDK_PARTNER_ID}'
 AND l.partner_id = p.partner_id
 EOF-${REQUEST_ID}`
 
-    if [ "$?" -ne 0 ]; then
-        ERROR_FLAG=1
-    elif [ -n "${LICENSES}" ]; then
-        echo "${LICENSES}" | awk -F"\t" '{ printf "[%s]\nname=%s\nemail=%s\nsigned_key=%s\n\n", $1, $2, $3, $4 }' > "${LICENSEDIR}/${PARTNER_KEY_FILE}"
+	if [ "$?" -ne 0 ]; then
+	    ERROR_FLAG=1
+	    echo "FILE <${BASE_NAME}> TYPE <PARTNER> REASON <Database error while retrieving partner licenses>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
+	elif [ -n "${LICENSES}" ]; then
+	    echo "${LICENSES}" | awk -F"\t" '{ printf "[%s]\nname=%s\nemail=%s\nsigned_key=%s\n\n", $1, $2, $3, $4 }' > "${LICENSEDIR}/${PARTNER_KEY_FILE}"
+	    echo "${LICENSES}" | awk -F"\t" "{ printf \"FILE <${BASE_NAME}> TYPE <PARTNER> PARTNER <%s> NAME <%s>\n\",\$1, \$2 }" >> "${REQDIR}/${REQUEST_ID}/download.log"
+
+	    # record download request
+	    for l in ${LICENSES}; do
+		local L_PARTNER_ID=`echo "${l}" | awk -F"\t" '{ print $1 }'`
+
+		cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+INSERT into Downloads(terminal_stub, partner_id, ip_address, sdk_version, app_version, license_helper_version, download_request_id, created, created_by)
+    values('${license_stub}', '${L_PARTNER_ID}', '${SENDER}', NULL, NULL, NULL, '${REQUEST_ID}', NOW(), '${REQ_TO}')
+EOF-${REQUEST_ID}
+	    done
+	fi
     fi
 
     if [ $ERROR_FLAG -eq 0 ]; then
@@ -194,7 +223,7 @@ EOF-${REQUEST_ID}
 ############################################################################
 # forward request to Tender
 ############################################################################
-"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/forward" > "${REQDIR}/${REQUEST_ID}/forward.smtp" 2>&1
+#"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/forward" > "${REQDIR}/${REQUEST_ID}/forward.smtp" 2>&1
 if [ "$?" -ne 0 ]; then
     mv "${REQDIR}/${REQUEST_ID}/forward" "${REQDIR}/${REQUEST_ID}/forward.unsent"
 else
