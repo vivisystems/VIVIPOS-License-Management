@@ -123,7 +123,7 @@ EOF-${REQUEST_ID}
 	    cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
 #resolve
 There does not appear to be any stub files attached to the request. Please
-attach the stub file(s) and re-submit your request.
+submit a new request with the proper stub file(s) attached.
 
 EOF-${REQUEST_ID}
 
