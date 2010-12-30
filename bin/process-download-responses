@@ -111,12 +111,23 @@ Attached are the license(s) you have requested.
 EOF-${REQUEST_ID}
         fi
     else
-        cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
+	if [ $FAIL_COUNT -gt 0 ]; then
+	    cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
 #queue Open License Requests
 We were unable to retrieve the licenses you have requested. Our support staff
 has been notified and will contact you to resolve the issue as soon as possible.
 
 EOF-${REQUEST_ID}
+
+	else
+	    cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
+#resolve
+There does not appear to be any stub files attached to the request. Please
+attach the stub file(s) and re-submit your request.
+
+EOF-${REQUEST_ID}
+
+	fi
     fi
 
 ############################################################################
