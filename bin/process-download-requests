@@ -223,7 +223,7 @@ EOF-${REQUEST_ID}
 ############################################################################
 # forward request to Tender
 ############################################################################
-#"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/forward" > "${REQDIR}/${REQUEST_ID}/forward.smtp" 2>&1
+"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/forward" > "${REQDIR}/${REQUEST_ID}/forward.smtp" 2>&1
 if [ "$?" -ne 0 ]; then
     mv "${REQDIR}/${REQUEST_ID}/forward" "${REQDIR}/${REQUEST_ID}/forward.unsent"
 else

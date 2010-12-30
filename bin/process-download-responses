@@ -98,7 +98,6 @@ if [ -d "${REQDIR}/${ORIG_REQUEST_ID}" ]; then
         if [ ${FAIL_COUNT} -gt 0 ]; then
             cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
 #queue Open License Requests
-TEST5
 The license(s) you requested are attached. However, we were unable to process
 one or more of the stub files you sent. Our support staff has been notified and
 will contact you to resolve the issue as soon as possible.
