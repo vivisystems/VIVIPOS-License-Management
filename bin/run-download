@@ -2,5 +2,5 @@
 BASEDIR=`dirname $0`/..
 #BASEDIR=/home/vivipos/workspace/LICENSES
 
-fetchmail -f $BASEDIR/fetchmailrc-download -N -d0 --nosyslog -v -m "/usr/bin/procmail -m FROM=%F TO=%T SUBJECT=%s BASEDIR='$BASEDIR' $BASEDIR/procmailrc-download"
+fetchmail -f $BASEDIR/fetchmailrc-download -N -d0 --syslog -v -m "/usr/bin/procmail -m FROM=%F TO=%T SUBJECT=%s BASEDIR='$BASEDIR' $BASEDIR/procmailrc-download"
 

@@ -28,6 +28,9 @@ LICENSE_IMPORT_COUNT=0
 STUB_REJECT_COUNT=0
 LICENSE_REJECT_COUNT=0
 
+SUCCESSDIR="${REQDIR}/${REQUEST_ID}/success"
+FAILDIR="${REQDIR}/${REQUEST_ID}/fail"
+
 
 ############################################################################
 #
@@ -95,7 +98,7 @@ if [ -n "${MODEL}" ]; then
     UPDATE_MODEL_CLAUSE="model=VALUES(model), "
 fi
 # insert entry into Terminals
-cat | mysql Licenses <<EOF-${REQUEST_ID}
+cat  <<EOF-${REQUEST_ID} | mysql Licenses
 BEGIN;
 
 INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, import_request_id, signed_by)
@@ -136,7 +139,7 @@ process_stub() {
     SOFTWARE_SERIAL=`echo $BASE_NAME | awk -F- '{print $2}'`
 
     # import stub details into environment
-    eval `awk -F"=" '$1 ~ /[A-Za-z0-9_]+/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
+    eval `awk -F"=" '$1 ~ /^[A-Za-z0-9_]+$/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
 
     # generate license key
     KEY=`${LICENSE_TOOL} -f "${stub}"`
@@ -158,7 +161,7 @@ EOF-${REQUEST_ID}
     validate_stub "${ORDER_NO}" "${HARDWARE_SERIAL}" "${license_stub}" "${KEY}"
     if [ "$?" -ne 0 ]; then
         echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-        mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${REQDIR}/${REQUEST_ID}/bad-stub-${HARDWARE_SERIAL}"
+        mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${FAILDIR}/stub-${HARDWARE_SERIAL}"
         STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
         return 1
     else
@@ -167,11 +170,12 @@ EOF-${REQUEST_ID}
         store_stub
         if [ "$?" -ne 0 ]; then
             echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
-            mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${REQDIR}/${REQUEST_ID}/failed-stub-${HARDWARE_SERIAL}"
+            mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${FAILDIR}/stub-${HARDWARE_SERIAL}"
             STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
             return 1
         else
             echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <STUB>" >> "${REQDIR}/${REQUEST_ID}/imported.log"
+            mv "${REQDIR}/${REQUEST_ID}/stub-${HARDWARE_SERIAL}" "${SUCCESSDIR}/stub-${HARDWARE_SERIAL}"
             STUB_IMPORT_COUNT=$((STUB_IMPORT_COUNT+1))
         fi
 
@@ -295,18 +299,15 @@ process_license() {
 	PARTNER_ID=`echo "${license}" | sed -n 's/^\([^=]*\)=.*$/\1/;p'`
 	PARTNER_KEY=`echo "${license}" | sed -n 's/^[^=]*=\(.*$\)/\1/;p'`
 
-	# log output
-	echo "${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-
 	# are data valid?
 	validate_license "${PARTNER_ID}" "${PARTNER_KEY}"
 	if [ "$?" -ne 0 ]; then
 	    echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
             LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
 
-	    echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-	    echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-	    echo >> "${REQDIR}/${REQUEST_ID}/bad-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+	    echo "[${PARTNER_ID}]" >> "${FAILDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+	    echo "signed_key=${PARTNER_KEY}" >> "${FAILDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+	    echo >> "${FAILDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 	else
 
 	    # extract expire date
@@ -318,12 +319,16 @@ process_license() {
 		echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
                 LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
 
-		echo "[${PARTNER_ID}]" >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-		echo "signed_key=${PARTNER_KEY}" >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
-		echo >> "${REQDIR}/${REQUEST_ID}/failed-license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+		echo "[${PARTNER_ID}]" >> "${FAILDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+		echo "signed_key=${PARTNER_KEY}" >> "${FAILDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+		echo >> "${FAILDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 	    else
 		echo "ORDER <${ORDER_NO}> SN <${HARDWARE_SERIAL}> TYPE <PARTNER> PARTNER <${PARTNER_ID}>" >> "${REQDIR}/${REQUEST_ID}/imported.log"
                 LICENSE_IMPORT_COUNT=$((LICENSE_IMPORT_COUNT+1))
+
+		echo "[${PARTNER_ID}]" >> "${SUCCESSDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+		echo "signed_key=${PARTNER_KEY}" >> "${SUCCESSDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
+		echo >> "${SUCCESSDIR}/license-${HARDWARE_SERIAL}-${PARTNER_ID}"
 	    fi
 	fi
     done
@@ -339,17 +344,20 @@ process_license() {
 # saving request
 ############################################################################
 mkdir -p "${ATTACHDIR}"
+mkdir -p "${SUCCESSDIR}"
+mkdir -p "${FAILDIR}"
 env > "${REQDIR}/${REQUEST_ID}/env"
 cat > "${REQDIR}/${REQUEST_ID}/req"
 
 ############################################################################
 # extract email headers and content
 ############################################################################
-REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
-REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
-REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req"`
+sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" > "${REQDIR}/${REQUEST_ID}/req-headers"
+REQ_SUBJECT=`grep -E -e '^Subject: ' "${REQDIR}/${REQUEST_ID}/req-headers"`
+REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req-headers" | awk -F" " '{print $2}'`
+REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
-REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req"`
+REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 
 ############################################################################
 # extract multipart boundary

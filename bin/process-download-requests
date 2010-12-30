@@ -13,6 +13,7 @@ IFS='
 '
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
+LICENSEDIR="${REQDIR}/${REQUEST_ID}/licenses"
 SMTP_CLIENT=msmtp
 REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
@@ -22,10 +23,68 @@ TENDER_FORWARD_ADDRESS="tender+cb350522af7fc8238b8ec6268087eaf884ce2cd27@tendera
 
 SDK_PARTNER_ID="VIVIPOS SDK"
 
-STUB_DOWNLOAD_COUNT=0
+SUCCESSDIR="${REQDIR}/${REQUEST_ID}/success"
+FAILDIR="${REQDIR}/${REQUEST_ID}/fail"
 
-STUB_REJECT_COUNT=0
 
+############################################################################
+#
+# process_stub
+#
+# process a stub file
+#
+# @args: <stub file>
+#
+############################################################################
+
+process_stub() {
+
+    local stub=$1
+
+    # for each stub file, generate corresponding SDK key and partner license key files
+    local BASE_NAME=`basename "${stub}" .txt | sed -e 's/\.[^\.]*//'`
+    local SDK_KEY_FILE="${BASE_NAME}.lic"
+    local PARTNER_KEY_FILE="${BASE_NAME}_partner.lic"
+
+    local ERROR_FLAG=0
+
+    # import stub details into environment
+    license_stub=
+    eval `awk -F"=" '$1 ~ /^[A-Za-z0-9_]+$/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
+
+    # retrieve SDK license key
+    local SQL="select license_key FROM Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}' limit 1"
+    local LICENSE_KEY=`echo "${SQL}" | mysql -N Licenses`
+
+    if [ "$?" -ne 0 ]; then
+        ERROR_FLAG=1
+    elif [ -z "${LICENSE_KEY}" ]; then
+        ERROR_FLAG=1
+    else
+        echo -n "${LICENSE_KEY}" > "${LICENSEDIR}/${SDK_KEY_FILE}"
+    fi
+
+    # retrieve partner license key(s)
+    local LICENSES=`cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+SELECT p.partner_id, p.name, p.email, l.license_key
+FROM Partners p, Licenses l
+WHERE l.terminal_stub = '${license_stub}'
+AND l.partner_id != '${SDK_PARTNER_ID}'
+AND l.partner_id = p.partner_id
+EOF-${REQUEST_ID}`
+
+    if [ "$?" -ne 0 ]; then
+        ERROR_FLAG=1
+    elif [ -n "${LICENSES}" ]; then
+        echo "${LICENSES}" | awk -F"\t" '{ printf "[%s]\nname=%s\nemail=%s\nsigned_key=%s\n\n", $1, $2, $3, $4 }' > "${LICENSEDIR}/${PARTNER_KEY_FILE}"
+    fi
+
+    if [ $ERROR_FLAG -eq 0 ]; then
+        cp "${stub}" "${SUCCESSDIR}"
+    else
+        cp "${stub}" "${FAILDIR}"
+    fi
+}
 
 ############################################################################
 #
@@ -36,6 +95,9 @@ STUB_REJECT_COUNT=0
 ############################################################################
 # saving request
 ############################################################################
+mkdir -p "${LICENSEDIR}"
+mkdir -p "${SUCCESSDIR}"
+mkdir -p "${FAILDIR}"
 mkdir -p "${ATTACHDIR}"
 env > "${REQDIR}/${REQUEST_ID}/env"
 cat > "${REQDIR}/${REQUEST_ID}/req"
@@ -43,12 +105,12 @@ cat > "${REQDIR}/${REQUEST_ID}/req"
 ############################################################################
 # extract email headers and content
 ############################################################################
-#REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
-REQ_SUBJECT=`sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" | grep -E -e '^Subject:'`
-REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
-REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req"`
+sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" > "${REQDIR}/${REQUEST_ID}/req-headers"
+REQ_SUBJECT=`grep -E -e '^Subject: ' "${REQDIR}/${REQUEST_ID}/req-headers"`
+REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req-headers" | awk -F" " '{print $2}'`
+REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
-REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req"`
+REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 
 ############################################################################
 # extract multipart boundary
@@ -76,6 +138,28 @@ fi
 # extract attachments
 ############################################################################
 ripmime -i "${REQDIR}/${REQUEST_ID}/req" -d "${ATTACHDIR}" --no-nameless
+
+############################################################################
+# uncompress RAR attachments first
+############################################################################
+for f in `find ${ATTACHDIR} -name \*.rar`; do
+
+    local FILE_NAME=`basename "$f" .rar`
+
+    # extract files into temp folder
+    mkdir "${ATTACHDIR}/${FILE_NAME}"
+    unrar x -y "$f" "${ATTACHDIR}/${FILE_NAME}"
+
+done
+
+############################################################################
+# begin processing attachments
+############################################################################
+for stub in `find ${ATTACHDIR} -type f -readable \! -name '*.rar'`; do
+
+    process_stub "${stub}"
+
+done
 
 ############################################################################
 # generate email to be forwarded to Tender

@@ -41,11 +41,16 @@ cat > "${REQDIR}/${REQUEST_ID}/req"
 ############################################################################
 # extract email headers and content
 ############################################################################
-#REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
 REQ_SUBJECT=`sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" | grep -E -e '^Subject: '`
 REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
 REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req"`
 REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
+
+############################################################################
+# extract original request ID from subject
+############################################################################
+
+ORIG_REQUEST_ID=`echo "${REQ_SUBJECT}" | sed -e 's/^.*\[ID: \([0-9-]*\)\] \[License Requests\]$/\1/'`
 
 ############################################################################
 # extract sender from request
@@ -56,26 +61,116 @@ if [ -z "${SENDER}" ]; then
 fi
 
 ############################################################################
-# generate response to Tender discussion
+# generate response header to Tender discussion
 ############################################################################
+RES_MULTIPART_BOUNDARY=`uuid`
+
 cat > "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
 From: ${REPLY_SENDER}
 To: ${SENDER}
 ${REQ_SUBJECT}
 Reply-To: ${REPLY_REPLY_TO}
+Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 
-#resolve
+--${RES_MULTIPART_BOUNDARY}
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
 #ignore
-
-Request resolved
-
 EOF-${REQUEST_ID}
 
+############################################################################
+# determine response to request
+############################################################################
+
+if [ -d "${REQDIR}/${ORIG_REQUEST_ID}" ]; then
+
+    # licenses generated?
+    LICENSE_COUNT=`find "${REQDIR}/${ORIG_REQUEST_ID}/licenses" -type f | wc -l`
+
+    # attachments successfully processed
+    SUCCESS_COUNT=`find "${REQDIR}/${ORIG_REQUEST_ID}/success" -type f | wc -l`
+
+    # attachments successfully processed
+    FAIL_COUNT=`find "${REQDIR}/${ORIG_REQUEST_ID}/fail" -type f | wc -l`
+
+    if [ ${LICENSE_COUNT} -gt 0 ]; then
+        if [ ${FAIL_COUNT} -gt 0 ]; then
+            cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
+#queue Open License Requests
+TEST5
+The license(s) you requested are attached. However, we were unable to process
+one or more of the stub files you sent. Our support staff has been notified and
+will contact you to resolve the issue as soon as possible.
+
+EOF-${REQUEST_ID}
+        else
+            cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
+#resolve
+Attached are the license(s) you have requested.
+
+EOF-${REQUEST_ID}
+        fi
+    else
+        cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
+#queue Open License Requests
+We were unable to retrieve the licenses you have requested. Our support staff
+has been notified and will contact you to resolve the issue as soon as possible.
+
+EOF-${REQUEST_ID}
+    fi
+
+############################################################################
+# attach output files
+############################################################################
+
+    if [ ${LICENSE_COUNT} -gt 0 ]; then
+        echo "--${RES_MULTIPART_BOUNDARY}" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Type: application/rar; name=\"licenses.rar\"" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Disposition: attachment; filename=\"licenses.rar\"" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Transfer-Encoding: base64" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo >> "${REQDIR}/${REQUEST_ID}/response"
+
+        rar a -r -ep "${REQDIR}/${ORIG_REQUEST_ID}/licenses.rar" "${REQDIR}/${ORIG_REQUEST_ID}/licenses"
+        uuencode -m "${REQDIR}/${ORIG_REQUEST_ID}/licenses.rar" licenses.rar | sed -e '1d' >> "${REQDIR}/${REQUEST_ID}/response"
+    fi
+
+    if [ ${SUCCESS_COUNT} -gt 0 ]; then
+        echo "--${RES_MULTIPART_BOUNDARY}" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Type: application/rar; name=\"success.rar\"" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Disposition: attachment; filename=\"success.rar\"" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Transfer-Encoding: base64" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo >> "${REQDIR}/${REQUEST_ID}/response"
+
+        rar a -r -ep "${REQDIR}/${ORIG_REQUEST_ID}/success.rar" "${REQDIR}/${ORIG_REQUEST_ID}/success"
+        uuencode -m "${REQDIR}/${ORIG_REQUEST_ID}/success.rar" success.rar | sed -e '1d' >> "${REQDIR}/${REQUEST_ID}/response"
+    fi
+
+    if [ ${FAIL_COUNT} -gt 0 ]; then
+        echo "--${RES_MULTIPART_BOUNDARY}" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Type: application/rar; name=\"fail.rar\"" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Disposition: attachment; filename=\"fail.rar\"" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo "Content-Transfer-Encoding: base64" >> "${REQDIR}/${REQUEST_ID}/response"
+        echo >> "${REQDIR}/${REQUEST_ID}/response"
+
+        rar a -r -ep "${REQDIR}/${ORIG_REQUEST_ID}/fail.rar" "${REQDIR}/${ORIG_REQUEST_ID}/fail"
+        uuencode -m "${REQDIR}/${ORIG_REQUEST_ID}/fail.rar" fail.rar | sed -e '1d' >> "${REQDIR}/${REQUEST_ID}/response"
+    fi
+
+else
+    cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
+#ignore
+#queue Open License Requests
+
+Original request no longer available, redirected to Support Staff for follow up
+
+EOF-${REQUEST_ID}
+fi
 
 ############################################################################
 # send response to Tender
 ############################################################################
-#"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
+"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/response" > "${REQDIR}/${REQUEST_ID}/response.smtp" 2>&1
 if [ "$?" -ne 0 ]; then
     mv "${REQDIR}/${REQUEST_ID}/response" "${REQDIR}/${REQUEST_ID}/response.unsent"
 else

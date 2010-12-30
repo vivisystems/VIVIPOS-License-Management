@@ -27,6 +27,9 @@ STUB_REJECT_COUNT=0
 SDK_REJECT_COUNT=0
 LICENSE_REJECT_COUNT=0
 
+SUCCESSDIR="${REQDIR}/${REQUEST_ID}/success"
+FAILDIR="${REQDIR}/${REQUEST_ID}/fail"
+
 
 ############################################################################
 #
@@ -44,7 +47,7 @@ revoke_stub() {
     local FILE_NAME=`basename "${stub}"`
 
     # import stub details into environment
-    eval `awk -F"=" '$1 ~ /[A-Za-z0-9_]+/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
+    eval `awk -F"=" '$1 ~ /^[A-Za-z0-9_]+$/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
 
     # check if stub exists
     SQL="select count(*) from Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}'"
@@ -53,6 +56,8 @@ revoke_stub() {
     if [ $COUNT -eq 0 ]; then
         REASON="No valid [${SDK_PARTNER_ID}] license found"
 	echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+        cp "${stub}" "${FAILDIR}"
+
         STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
     else
 
@@ -104,6 +109,8 @@ EOF-${REQUEST_ID}
 	if [ $? -ne 0 ]; then
 	    REASON="Database error encountered while revoking license(s) ($?)"
 	    echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            cp "${stub}" "${FAILDIR}"
+
             STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
 	else
 	    # check if license(s) successfully revoked
@@ -113,9 +120,13 @@ EOF-${REQUEST_ID}
 	    if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
 		REASON="Database error encountered while verifying revoked license(s) ($?)"
 		echo "TYPE <STUB> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                cp "${stub}" "${FAILDIR}"
+
                 STUB_REJECT_COUNT=$((STUB_REJECT_COUNT+1))
 	    else
 		echo "TYPE <STUB> FILE <${FILE_NAME}> LICENSE COUNT <${COUNT}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
+                cp "${stub}" "${SUCCESSDIR}"
+
                 STUB_REVOKE_COUNT=$((STUB_REVOKE_COUNT+1))
 	    fi
 	fi
@@ -148,10 +159,12 @@ revoke_sdk_license() {
     if [ $COUNT -eq 0 ]; then
         REASON="No valid [${SDK_PARTNER_ID}] license found"
 	echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+
         SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
     elif [ $COUNT -gt 1 ]; then
         REASON="Multiple matching [${SDK_PARTNER_ID}] licenses found"
 	echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+
         SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
     else
         # retrieve terminal stub
@@ -206,6 +219,7 @@ EOF-${REQUEST_ID}
 	if [ $? -ne 0 ]; then
 	    REASON="Database error encountered while revoking license ($?)"
 	    echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+
             SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
 	else
 	    # check if license(s) successfully revoked
@@ -215,6 +229,7 @@ EOF-${REQUEST_ID}
 	    if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
 		REASON="Database error encountered while verifying revoked license(s) ($?)"
 		echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+
                 SDK_REJECT_COUNT=$((SDK_REJECT_COUNT+1))
 	    else
 		echo "TYPE <SDK LICENSE> FILE <${FILE_NAME}> LICENSE COUNT <${COUNT}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
@@ -270,10 +285,14 @@ revoke_partner_license() {
         if [ $COUNT -eq 0 ]; then
             REASON="No valid [${PARTNER_ID}] license found"
             echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            cp "${LICENSE_FILE}" "${FAILDIR}/${FILE_NAME}-${PARTNER_ID}"
+
             LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
         elif [ $COUNT -gt 1 ]; then
             REASON="Multiple matching [${PARTNER_ID}] licenses found"
             echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+            cp "${LICENSE_FILE}" "${FAILDIR}/${FILE_NAME}-${PARTNER_ID}"
+
             LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
         else
 
@@ -326,6 +345,8 @@ EOF-${REQUEST_ID}
                 REASON="Database error encountered while revoking license for [${PARTNER_ID}] ($?)"
                 echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
                 LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
+                cp "${LICENSE_FILE}" "${FAILDIR}/${FILE_NAME}-${PARTNER_ID}"
+
             else
                 # check if license(s) successfully revoked
                 SQL="select count(*) from Revokes where revoke_request_id='${REQUEST_ID}' and license_key='${PARTNER_KEY}' and revoke_type='PARTNER LICENSE'"
@@ -334,9 +355,13 @@ EOF-${REQUEST_ID}
                 if [ "$?" -ne 0 -o "$COUNT" -eq 0 ]; then
                     REASON="Database error encountered while verifying revoked license for [${PARTNER_ID}] ($?)"
                     echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> REASON <${REASON}>" >> "${REQDIR}/${REQUEST_ID}/rejected.log"
+                    cp "${LICENSE_FILE}" "${FAILDIR}/${FILE_NAME}-${PARTNER_ID}"
+
                     LICENSE_REJECT_COUNT=$((LICENSE_REJECT_COUNT+1))
                 else
                     echo "TYPE <PARTNER LICENSE> FILE <${FILE_NAME}> PARTNER <${PARTNER_ID}>" >> "${REQDIR}/${REQUEST_ID}/revoked.log"
+                    cp "${LICENSE_FILE}" "${SUCCESSDIR}/${FILE_NAME}-${PARTNER_ID}"
+
                     LICENSE_REVOKE_COUNT=$((LICENSE_REVOKE_COUNT+1))
                 fi
             fi
@@ -380,17 +405,20 @@ REVOKE_LICENSE=
 # saving request
 ############################################################################
 mkdir -p "${ATTACHDIR}"
+mkdir -p "${SUCCESSDIR}"
+mkdir -p "${FAILDIR}"
 env > "${REQDIR}/${REQUEST_ID}/env"
 cat > "${REQDIR}/${REQUEST_ID}/req"
 
 ############################################################################
 # extract email headers and content
 ############################################################################
-REQ_SUBJECT=`grep -E -m 1 -e "^Subject: " "${REQDIR}/${REQUEST_ID}/req"`
-REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req" | awk -F" " '{print $2}'`
-REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req"`
+sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" > "${REQDIR}/${REQUEST_ID}/req-headers"
+REQ_SUBJECT=`grep -E -e '^Subject: ' "${REQDIR}/${REQUEST_ID}/req-headers"`
+REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req-headers" | awk -F" " '{print $2}'`
+REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
-REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req"`
+REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 
 ############################################################################
 # extract multipart boundary
