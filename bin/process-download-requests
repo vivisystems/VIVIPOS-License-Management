@@ -129,7 +129,7 @@ forward() {
     cat > "${OUTPUT_FILE}" << EOF-${REQUEST_ID}
 From: ${SENDER}
 To: ${TENDER_FORWARD_ADDRESS}
-${REQ_SUBJECT} [ID: ${REQUEST_ID}]
+Subject: Re:${REQ_SUBJECT_CONTENT} [ID: ${REQUEST_ID}]
 Reply-To: ${SENDER}
 Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 
@@ -169,7 +169,7 @@ reject() {
     cat > "${OUTPUT_FILE}" << EOF-${REQUEST_ID}
 From: ${REPLY_SENDER}
 To: ${SENDER}
-${REQ_SUBJECT}
+Subject: Re:${REQ_SUBJECT_CONTENT}
 Reply-To: ${REPLY_REPLY_TO}
 Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 
@@ -242,6 +242,7 @@ cat > "${REQDIR}/${REQUEST_ID}/req"
 ############################################################################
 sed -n -e '1,/^$/ { /^[^[:space:]]/ { x; p; }; /^[[:space:]]/ { x; G; s/\n//; h; }; /^$/ { g; p; } }; /^$/,$d' < "${REQDIR}/${REQUEST_ID}/req" > "${REQDIR}/${REQUEST_ID}/req-headers"
 REQ_SUBJECT=`grep -E -e '^Subject: ' "${REQDIR}/${REQUEST_ID}/req-headers"`
+REQ_SUBJECT_CONTENT=`echo "${REQ_SUBJECT}" | sed -e 's/^Subject:[[:space:]]*//'`
 REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req-headers" | awk -F" " '{print $2}'`
 REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
