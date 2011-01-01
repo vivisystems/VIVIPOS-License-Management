@@ -13,7 +13,6 @@ IFS='
 '
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
-LICENSEDIR="${REQDIR}/${REQUEST_ID}/licenses"
 SMTP_CLIENT=msmtp
 REPLY_SENDER="VIVIPOS License Service"
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
@@ -23,6 +22,7 @@ TENDER_FORWARD_ADDRESS="tender+cb350522af7fc8238b8ec6268087eaf884ce2cd27@tendera
 
 SDK_PARTNER_ID="VIVIPOS SDK"
 
+LICENSEDIR="${REQDIR}/${REQUEST_ID}/licenses"
 SUCCESSDIR="${REQDIR}/${REQUEST_ID}/success"
 FAILDIR="${REQDIR}/${REQUEST_ID}/fail"
 
@@ -115,6 +115,112 @@ EOF-${REQUEST_ID}
     fi
 }
 
+
+############################################################################
+#
+# generate forward response
+#
+############################################################################
+
+forward() {
+
+    local OUTPUT_FILE=$1
+
+    cat > "${OUTPUT_FILE}" << EOF-${REQUEST_ID}
+From: ${SENDER}
+To: ${TENDER_FORWARD_ADDRESS}
+${REQ_SUBJECT} [ID: ${REQUEST_ID}]
+Reply-To: ${SENDER}
+Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
+
+--${RES_MULTIPART_BOUNDARY}
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Request received via ${REQ_TO}
+
+--------------- Original Request ---------------
+
+--${RES_MULTIPART_BOUNDARY}
+EOF-${REQUEST_ID}
+
+    if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
+        echo "${REQ_CONTENT_TYPE}" >> "${OUTPUT_FILE}"
+        echo >> "${OUTPUT_FILE}"
+    fi
+
+    cat >> "${OUTPUT_FILE}" <<EOF-${REQUEST_ID}
+${REQ_BODY}
+EOF-${REQUEST_ID}
+
+}
+
+
+############################################################################
+#
+# generate reject response
+#
+############################################################################
+
+reject() {
+
+    local OUTPUT_FILE=$1
+
+    cat > "${OUTPUT_FILE}" << EOF-${REQUEST_ID}
+From: ${REPLY_SENDER}
+To: ${SENDER}
+${REQ_SUBJECT}
+Reply-To: ${REPLY_REPLY_TO}
+Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
+
+--${RES_MULTIPART_BOUNDARY}
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+There does not appear to be any stub files attached to the request. Please
+submit a new request with the proper stub file(s) attached.
+
+Yours sincerely,
+
+VIVIPOS Support
+
+--------------- Original Request ---------------
+
+--${RES_MULTIPART_BOUNDARY}
+EOF-${REQUEST_ID}
+
+    if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
+        echo "${REQ_CONTENT_TYPE}" >> "${OUTPUT_FILE}"
+        echo >> "${OUTPUT_FILE}"
+    fi
+
+    cat >> "${OUTPUT_FILE}" <<EOF-${REQUEST_ID}
+${REQ_BODY}
+EOF-${REQUEST_ID}
+
+}
+
+
+############################################################################
+#
+# send response
+#
+############################################################################
+
+send() {
+
+    local RESPONSE_FILE=$1
+
+    "${SMTP_CLIENT}" -t < "${RESPONSE_FILE}" > "${RESPONSE_FILE}.log" 2>&1
+    if [ "$?" -ne 0 ]; then
+        mv "${RESPONSE_FILE}" "${RESPONSE_FILE}.unsent"
+    else
+        mv "${RESPONSE_FILE}" "${RESPONSE_FILE}.sent"
+    fi
+
+}
+
+
 ############################################################################
 #
 # main
@@ -191,42 +297,25 @@ for stub in `find ${ATTACHDIR} -type f \! -name '*.rar'`; do
 done
 
 ############################################################################
-# generate email to be forwarded to Tender
+# forward request to Tender only if attachments are found
 ############################################################################
-cat > "${REQDIR}/${REQUEST_ID}/forward" << EOF-${REQUEST_ID}
-From: ${SENDER}
-To: ${TENDER_FORWARD_ADDRESS}
-${REQ_SUBJECT} [ID: ${REQUEST_ID}]
-Reply-To: ${SENDER}
-Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
+# licenses generated?
+LICENSE_COUNT=`find "${LICENSEDIR}" -type f | wc -l`
 
---${RES_MULTIPART_BOUNDARY}
-Content-Type: text/plain; charset=utf-8
-Content-Transfer-Encoding: 7bit
+# attachments successfully processed
+SUCCESS_COUNT=`find "${SUCCESSDIR}" -type f | wc -l`
 
-Request received via ${REQ_TO}
+# attachments successfully processed
+FAIL_COUNT=`find "${FAILDIR}" -type f | wc -l`
 
---------------- Original Request ---------------
-
---${RES_MULTIPART_BOUNDARY}
-EOF-${REQUEST_ID}
-
-if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
-echo "${REQ_CONTENT_TYPE}" >> "${REQDIR}/${REQUEST_ID}/forward"
-echo >> "${REQDIR}/${REQUEST_ID}/forward"
+if [ ${LICENSE_COUNT} -gt 0 -o ${SUCCESS_COUNT} -gt 0 -o ${FAIL_COUNT} -gt 0 ]; then
+    forward "${REQDIR}/${REQUEST_ID}/forward"
+    send "${REQDIR}/${REQUEST_ID}/forward"
+else
+    reject "${REQDIR}/${REQUEST_ID}/invalid"
+    send "${REQDIR}/${REQUEST_ID}/invalid"
 fi
-
-cat >> "${REQDIR}/${REQUEST_ID}/forward" <<EOF-${REQUEST_ID}
-${REQ_BODY}
-EOF-${REQUEST_ID}
 
 ############################################################################
 # forward request to Tender
 ############################################################################
-"${SMTP_CLIENT}" -t < "${REQDIR}/${REQUEST_ID}/forward" > "${REQDIR}/${REQUEST_ID}/forward.smtp" 2>&1
-if [ "$?" -ne 0 ]; then
-    mv "${REQDIR}/${REQUEST_ID}/forward" "${REQDIR}/${REQUEST_ID}/forward.unsent"
-else
-    mv "${REQDIR}/${REQUEST_ID}/forward" "${REQDIR}/${REQUEST_ID}/forward.sent"
-fi
-
