@@ -97,7 +97,14 @@ local UPDATE_MODEL_CLAUSE=""
 if [ -n "${MODEL}" ]; then
     UPDATE_MODEL_CLAUSE="model=VALUES(model), "
 fi
-# insert entry into Terminals
+
+# do not update license serial number if new value is empty
+local UPDATE_SERIAL_NUMBER_CLAUSE=""
+if [ -n "${SOFTWARE_SERIAL}" ]; then
+    UPDATE_SERIAL_CLAUSE="serial_number=VALUES(serial_number), "
+fi
+
+# insert entry into Terminals & Licenses
 cat  <<EOF-${REQUEST_ID} | mysql Licenses
 BEGIN;
 
@@ -107,7 +114,7 @@ ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_numbe
 
 INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, import_request_id)
 values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), serial_number=VALUES(serial_number), order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
+ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), ${UPDATE_SERIAL_CLAUSE} order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
 
 COMMIT;
 EOF-${REQUEST_ID}

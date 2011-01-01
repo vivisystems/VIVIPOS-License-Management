@@ -122,6 +122,7 @@ EOF-${REQUEST_ID}
 	else
 	    cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
 #resolve
+#delete
 There does not appear to be any stub files attached to the request. Please
 submit a new request with the proper stub file(s) attached.
 

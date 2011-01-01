@@ -184,7 +184,7 @@ done
 ############################################################################
 # begin processing attachments
 ############################################################################
-for stub in `find ${ATTACHDIR} -type f -readable \! -name '*.rar'`; do
+for stub in `find ${ATTACHDIR} -type f \! -name '*.rar'`; do
 
     process_stub "${stub}"
 
