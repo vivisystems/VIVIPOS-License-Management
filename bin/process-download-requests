@@ -129,7 +129,7 @@ forward() {
     cat > "${OUTPUT_FILE}" << EOF-${REQUEST_ID}
 From: ${SENDER}
 To: ${TENDER_FORWARD_ADDRESS}
-Subject: Re:${REQ_SUBJECT_CONTENT} [ID: ${REQUEST_ID}]
+Subject: ${REQ_SUBJECT_CONTENT} [ID: ${REQUEST_ID}]
 Reply-To: ${SENDER}
 Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 
