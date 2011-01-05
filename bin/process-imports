@@ -434,7 +434,7 @@ done
 for stub in `find ${ATTACHDIR} -maxdepth 1 -name \*.txt`; do
 
     # for TXT, order number should be in the subject line
-    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|V220|VM)-[[:alnum:]]+"`
+    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|C220|V220|S220|VM)-[[:alnum:]]+"`
     ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}' | sed 's/-[^-]*$//'`
     MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/#[^#]*$//'`
 
