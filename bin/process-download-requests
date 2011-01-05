@@ -71,7 +71,7 @@ process_stub() {
 
             # record license request
 cat <<EOF-${REQUEST_ID} | mysql -N Licenses
-INSERT into Requests(customer_name, email, dallas_key, system_name, mac_address, vendor_name, stub, status, created_on, created_by)
+INSERT into Requests(customer_name, email, dallas_key, system_name, mac_address, vendor_name, terminal_stub, status, created_on, created_by)
     values('${SENDER}', '${SENDER}', '${dallas}', '${system_name}', '${mac_address}', '${vendor_name}', '${license_stub}', 0, NOW(), '${REQ_TO}')
 EOF-${REQUEST_ID}
 
