@@ -109,15 +109,16 @@ cat  <<EOF-${REQUEST_ID} | mysql Licenses
 BEGIN;
 
 INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, import_request_id, signed_by)
-values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
-ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_number), created_by=VALUES(created_by), import_request_id=VALUES(import_request_id), signed_by=VALUES(signed_by), update_count=update_count+1;
+    values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
+    ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_number), created_by=VALUES(created_by), import_request_id=VALUES(import_request_id), signed_by=VALUES(signed_by), update_count=update_count+1;
 
 INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, import_request_id)
-values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
-ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), ${UPDATE_SERIAL_CLAUSE} order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
+    values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
+    ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), ${UPDATE_SERIAL_CLAUSE} order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
 
 UPDATE Requests SET status = 1, sales_rep = '${SENDER}', processed_by = '${REQUEST_ID}', processed_on = NOW()
-WHERE terminal_stub = '${license_stub}' and status = 0
+    WHERE terminal_stub = '${license_stub}' and status = 0;
+
 COMMIT;
 EOF-${REQUEST_ID}
 
