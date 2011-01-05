@@ -104,7 +104,7 @@ if [ -n "${SOFTWARE_SERIAL}" ]; then
     UPDATE_SERIAL_CLAUSE="serial_number=VALUES(serial_number), "
 fi
 
-# insert entry into Terminals & Licenses
+# insert entry into Terminals & Licenses, and update requests
 cat  <<EOF-${REQUEST_ID} | mysql Licenses
 BEGIN;
 
@@ -116,6 +116,8 @@ INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial
 values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
 ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), ${UPDATE_SERIAL_CLAUSE} order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
 
+UPDATE Requests SET status = 1, sales_rep = '${SENDER}', processed_by = '${REQUEST_ID}', processed_on = NOW()
+WHERE terminal_stub = '${license_stub}' and status = 0
 COMMIT;
 EOF-${REQUEST_ID}
 
