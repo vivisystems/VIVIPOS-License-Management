@@ -68,14 +68,21 @@ process_stub() {
 	elif [ -z "${LICENSE_KEY}" ]; then
 	    ERROR_FLAG=1
 	    echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <SDK license not found>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
+
+            # record license request
+cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+INSERT into Requests(customer_name, email, dallas_key, system_name, mac_address, vendor_name, stub, status, created_on, created_by)
+    values('${SENDER}', '${SENDER}', '${dallas}', '${system_name}', '${mac_address}', '${vendor_name}', '${license_stub}', 0, NOW(), '${REQ_TO}')
+EOF-${REQUEST_ID}
+
 	else
 	    echo -n "${LICENSE_KEY}" > "${LICENSEDIR}/${SDK_KEY_FILE}"
 	    echo "FILE <${BASE_NAME}> TYPE <SDK>" >> "${REQDIR}/${REQUEST_ID}/download.log"
 
 	    # record download request
 cat <<EOF-${REQUEST_ID} | mysql -N Licenses
-INSERT into Downloads(terminal_stub, partner_id, ip_address, sdk_version, app_version, license_helper_version, download_request_id, created, created_by)
-    values('${license_stub}', '${SDK_PARTNER_ID}', '${SENDER}', NULL, NULL, NULL, '${REQUEST_ID}', NOW(), '${REQ_TO}')
+INSERT into Downloads(terminal_stub, partner_id, ip_address, sdk_version, app_version, os_version, license_helper_version, download_request_id, created, created_by)
+    values('${license_stub}', '${SDK_PARTNER_ID}', '${SENDER}', NULL, NULL, NULL, NULL, '${REQUEST_ID}', NOW(), '${REQ_TO}')
 EOF-${REQUEST_ID}
 
 	fi

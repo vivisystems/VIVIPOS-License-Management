@@ -54,7 +54,7 @@ validate_stub()
 	return 1
     else
 	local PREFIX=`echo -n ${ORDER} | awk -F"-" '{print $1}'`
-	if [ "${PREFIX}" != "B220" -a "${PREFIX}" != "V220" -a "${PREFIX}" != "VM" ]; then
+	if [ "${PREFIX}" != "C220" -a "${PREFIX}" != "S220" -a "${PREFIX}" != "B220" -a "${PREFIX}" != "V220" -a "${PREFIX}" != "VM" ]; then
 	    REASON="Invalid order number"
 	    return 1
 	fi
