@@ -14,10 +14,12 @@ function sendRequestEmail($vars) {
     $boundary = '90e6ba6e8a9ad920480499176040';
     $res = $fh = @fopen($file, "w");
     if ($fh) {
+	
 	$res = $res && fprintf($fh, "From: %s <%s>\n", $vars['name'], $vars['email']);
 	$res = $res && fprintf($fh, "To: license-request@vivipos.com.tw\n");
 	$res = $res && fprintf($fh, "Reply-To: %s\n", $vars['email']);
 	$res = $res && fprintf($fh, "Subject: License Request (via License Helper)\n");
+	$res = $res && fprintf($fh, "X-Message-ID: <%s>\n", $vars['msg_id']);
 	$res = $res && fprintf($fh, "Content-Type: multipart/mixed; boundary=%s\n\n", $boundary);
 
 	$res = $res && fprintf($fh, "--%s\n", $boundary);
@@ -59,7 +61,7 @@ function sendRequestEmail($vars) {
 	    exec('/usr/bin/msmtp -t < ' . $file, $output = array(), &$status);
 	    $res = ($status == 0);
 
-	    unlink($file);
+	    //unlink($file);
 	}
     }
     return $res;

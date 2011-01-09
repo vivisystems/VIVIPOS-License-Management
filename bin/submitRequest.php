@@ -30,6 +30,7 @@ $required_vars = array(
 
 // Optional variables
 $optional_vars = array(
+    'msg_id',		// used internally, not expected from client
     'dallas',
     'mac',
     'system',
@@ -98,6 +99,9 @@ if ($test) {
  */
 if (empty($errors)) {
 
+    // generate unique message ID for later use
+    $_GET["msg_id"] = @exec("uuid");
+
     // Iterate through required variables, and escape/assign them as necessary.
     foreach (array_merge($required_vars, $optional_vars) as $var) {
 	$sql[$var] = mysql_real_escape_string($_GET[$var]);
@@ -130,7 +134,7 @@ if (empty($errors)) {
 						       sdk_version, app_version, os_version, lic_helper_version,
 						       hw_serial_number, sw_serial_number,
 						       status, created_on, created_by)
-					    values(NULL,
+					    values('{$sql["msg_id"]}',
 						   '{$ip}',
 						   '{$sql["name"]}',
 						   '{$sql["email"]}',
