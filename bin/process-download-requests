@@ -52,6 +52,31 @@ process_stub() {
     license_stub=
     eval `awk -F"=" '$1 ~ /^[A-Za-z0-9_]+$/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
 
+    local request_from_license_helper=0
+
+    # if X-Message-ID is present, update Request
+    if [ -n "${REQ_X_MESSAGE_ID}" ]; then
+
+	cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+UPDATE Requests
+    SET request_id = '${REQUEST_ID}'
+    WHERE request_id = '${REQ_X_MESSAGE_ID}'
+EOF-${REQUEST_ID}
+
+	# test if request exists
+	if [ "$?" -eq 0 ]; then
+	    request_from_license_helper=`cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+SELECT COUNT(*)
+FROM Requests
+WHERE request_id = '${REQUEST_ID}'
+EOF-${REQUEST_ID}`
+
+	    if [ "$?" -ne 0 ]; then
+		request_from_license_helper=0
+	    fi
+	fi
+    fi
+
     # test if license stub is present
     if [ -z "${license_stub}" ]; then
         ERROR_FLAG=1
@@ -69,11 +94,27 @@ process_stub() {
 	    ERROR_FLAG=1
 	    echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <SDK license not found>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
 
-            # record license request
-cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+	    if [ "${request_from_license_helper}" -eq 0 ]; then
+
+		# open request exists for this stub?
+		local open_request_exists=`cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+SELECT COUNT(*)
+FROM Requests
+WHERE terminal_stub = '${license_stub}'
+EOF-${REQUEST_ID}`
+
+		if [ "$?" -eq 0 -a ${open_request_exists} -eq = 0 ]; then
+		    # record license request
+		    cat <<EOF-${REQUEST_ID} | mysql -N Licenses
 INSERT into Requests(request_id, customer_name, email, dallas_key, system_name, mac_address, vendor_name, terminal_stub, status, created_on, created_by)
     values('${REQUEST_ID}', '${SENDER}', '${SENDER}', '${dallas}', '${system_name}', '${mac_address}', '${vendor_name}', '${license_stub}', 0, NOW(), '${REQ_TO}')
 EOF-${REQUEST_ID}
+		else
+		    ERROR_FLAG=1
+		    echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <License request for this terminal already pending>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
+		fi
+
+	    fi
 
 	else
 	    echo -n "${LICENSE_KEY}" > "${LICENSEDIR}/${SDK_KEY_FILE}"
@@ -254,6 +295,7 @@ REQ_TO=`grep -E -m 1 -e "^Delivered-To: " "${REQDIR}/${REQUEST_ID}/req-headers" 
 REQ_DATE=`grep -E -m 1 -e "^Date: " "${REQDIR}/${REQUEST_ID}/req-headers"`
 REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
 REQ_CONTENT_TYPE=`grep -E -m 1 -e "^Content-Type: " "${REQDIR}/${REQUEST_ID}/req-headers"`
+REQ_X_MESSAGE_ID=`grep -E -m 1 -e "^X-Message-ID: " "${REQDIR}/${REQUEST_ID}/req-headers" | sed 's/X-Message-ID: <\(.*\)>$/\1/p;d'`
 
 ############################################################################
 # extract multipart boundary
@@ -313,7 +355,7 @@ LICENSE_COUNT=`find "${LICENSEDIR}" -type f | wc -l`
 # attachments successfully processed
 SUCCESS_COUNT=`find "${SUCCESSDIR}" -type f | wc -l`
 
-# attachments successfully processed
+# attachments not successfully processed
 FAIL_COUNT=`find "${FAILDIR}" -type f | wc -l`
 
 if [ ${LICENSE_COUNT} -gt 0 -o ${SUCCESS_COUNT} -gt 0 -o ${FAIL_COUNT} -gt 0 ]; then
@@ -323,7 +365,3 @@ else
     reject "${REQDIR}/${REQUEST_ID}/invalid"
     send "${REQDIR}/${REQUEST_ID}/invalid"
 fi
-
-############################################################################
-# forward request to Tender
-############################################################################

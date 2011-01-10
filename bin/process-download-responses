@@ -61,6 +61,16 @@ if [ -z "${SENDER}" ]; then
 fi
 
 ############################################################################
+# update Request with sender address
+############################################################################
+cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+UPDATE Requests
+    SET ticket = '${SENDER}'
+    WHERE request_id = '${ORIG_REQUEST_ID}'
+EOF-${REQUEST_ID}
+
+
+############################################################################
 # generate response header to Tender discussion
 ############################################################################
 RES_MULTIPART_BOUNDARY=`uuid`
@@ -129,6 +139,16 @@ submit a new request with the proper stub file(s) attached.
 EOF-${REQUEST_ID}
 
 	fi
+    fi
+
+############################################################################
+# attach fail log
+############################################################################
+
+    if [ ${FAIL_COUNT} -gt 0 -a -r "${REQDIR}/${ORIG_REQUEST_ID}/failed.log" ]; then
+	echo "\n------ Error Log ------\n" >> "${REQDIR}/${REQUEST_ID}/response"
+	cat "${REQDIR}/${ORIG_REQUEST_ID}/failed.log" >> "${REQDIR}/${REQUEST_ID}/response"
+	echo "\n\n" >> "${REQDIR}/${REQUEST_ID}/response"
     fi
 
 ############################################################################
