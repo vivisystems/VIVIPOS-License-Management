@@ -116,9 +116,6 @@ INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial
     values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
     ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), ${UPDATE_SERIAL_CLAUSE} order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
 
-UPDATE Requests SET status = 1, sales_rep = '${SENDER}', processed_by = '${REQUEST_ID}', processed_on = NOW()
-    WHERE terminal_stub = '${license_stub}' and status = 0;
-
 COMMIT;
 EOF-${REQUEST_ID}
 
@@ -403,7 +400,7 @@ for f in `find ${ATTACHDIR} -name \*.rar`; do
 
     # for RAR, file name is <order number>[ model[#n]]
     FILE_NAME=`basename "$f" .rar`
-    ORDER_NO=`echo "${FILE_NAME}" | awk '{print $1}' | sed 's/-[^-]*$//'`
+    ORDER_NO=`echo "${FILE_NAME}" | awk '{print $1}'`
     MODEL=`echo "${FILE_NAME}" | awk '{print $2}' | sed 's/#[^#]*$//'`
 
     # extract stub files into temp folder
@@ -436,7 +433,7 @@ for stub in `find ${ATTACHDIR} -maxdepth 1 -name \*.txt`; do
 
     # for TXT, order number should be in the subject line
     SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|C220|V220|S220|VM)-[[:alnum:]]+"`
-    ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}' | sed 's/-[^-]*$//'`
+    ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}'`
     MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/#[^#]*$//'`
 
     process_stub "${stub}"

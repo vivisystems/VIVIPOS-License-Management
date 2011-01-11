@@ -40,6 +40,7 @@ function getRequests($reqID, &$dbh) {
 		    AND r.terminal_stub = l.terminal_stub
 		    AND r.status = 0
 		ORDER BY r.ticket";
+
     $res = mysql_query($querySQL, $dbh);
 
     if (!$res) {
@@ -99,6 +100,20 @@ $requests = getRequests($argv[1], $dbh);
 
 if (is_array($requests)) {
     // iterate over requests, generate license file(s) for each request, and email back to support system
+    $last_ticket = "";
+    foreach($requests as $req) {
+	$ticket = $req['ticket'];
+	$partner_id = $req['partner_id'];
+	$name = $req['name'];
+	$email = $req['email'];
+	$key = $req['key'];
+
+	if ($ticket != $last_ticket) {
+	    $last_ticket = $ticket;
+	    printf("%s[ticket: %s]\n\n", ($last_ticket == "") ? "" : "\n", $ticket);
+	}
+	printf("partner: %s\nname: %s\nemail: %s\nkey: %s\n\n", $partner_id, $name, $email, $key);
+    }
 }
 else {
     echo "SQL error: [" . mysql_error($dbh) . "] (" . $requests . ")";

@@ -124,7 +124,7 @@ EOF-${REQUEST_ID}
 	    cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
 #queue Open License Requests
 #ignore
-We were unable to retrieve the licenses you have requested. Our support staff
+We were unable to retrieve the license(s) you have requested. Our support staff
 has been notified and will contact you to resolve the issue as soon as possible.
 
 EOF-${REQUEST_ID}
