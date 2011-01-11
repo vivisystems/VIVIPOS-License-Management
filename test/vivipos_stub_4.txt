@@ -1,0 +1,5 @@
+dallas=4444444444444444
+system_name=All Fours System
+vendor_name=All Fours Vendor
+mac_address=444c29d2a12e
+license_stub=444a1b03d1b6cd8a174a826f76e009f4d41d8cd98f00b204e9800998ecf8427ed41d8cd98f00b204e9800998ecf8427eca06eb3927fa621516df32dc4861fd42
