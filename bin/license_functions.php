@@ -61,7 +61,7 @@ function sendRequestEmail($vars) {
 	    exec('/usr/bin/msmtp -t < ' . $file, $output = array(), &$status);
 	    $res = ($status == 0);
 
-	    //unlink($file);
+	    unlink($file);
 	}
     }
     return $res;
