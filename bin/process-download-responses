@@ -86,7 +86,6 @@ Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 Content-Type: text/plain; charset=utf-8
 Content-Transfer-Encoding: 7bit
 
-#ignore
 EOF-${REQUEST_ID}
 
 ############################################################################
@@ -190,7 +189,6 @@ EOF-${REQUEST_ID}
 
 else
     cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
-#ignore
 #queue Open License Requests
 
 Original request no longer available, redirected to Support Staff for follow up

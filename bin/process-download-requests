@@ -103,7 +103,7 @@ FROM Requests
 WHERE terminal_stub = '${license_stub}'
 EOF-${REQUEST_ID}`
 
-		if [ "$?" -eq 0 -a ${open_request_exists} -eq = 0 ]; then
+		if [ "$?" -eq 0 -a ${open_request_exists} -eq 0 ]; then
 		    # record license request
 		    cat <<EOF-${REQUEST_ID} | mysql -N Licenses
 INSERT into Requests(request_id, customer_name, email, dallas_key, system_name, mac_address, vendor_name, terminal_stub, status, created_on, created_by)
