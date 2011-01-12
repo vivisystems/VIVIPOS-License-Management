@@ -14,7 +14,7 @@ IFS='
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
 SMTP_CLIENT=msmtp
-REPLY_SENDER="VIVIPOS License Service <license-request@vivipos.com.tw>"
+REPLY_SENDER="\"VIVIPOS License Service\" <license-request@vivipos.com.tw>"
 REPLY_REPLY_TO="license-request@vivipos.com.tw"
 REPLY_SUBJECT="License download request status"
 

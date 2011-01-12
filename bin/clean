@@ -8,3 +8,4 @@ rm -f /tmp/import.log
 rm -f /tmp/revoke.log
 rm -f /tmp/download-response.log
 rm -f /tmp/download-request.log
+rm -f /tmp/response-tender*

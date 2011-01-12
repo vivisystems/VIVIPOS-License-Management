@@ -13,7 +13,7 @@ IFS='
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
 SMTP_CLIENT=msmtp
-REPLY_SENDER="VIVIPOS License Service"
+REPLY_SENDER="\"VIVIPOS License Service\""
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License revoke request status"
 

@@ -1,0 +1,12 @@
+account default
+host smtp.gmail.com
+port 587
+from license-request@vivipos.com.tw
+auto_from off
+tls on
+tls_starttls on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+auth on                     
+user license-request@vivipos.com.tw
+password 8368Kn9k
+syslog on

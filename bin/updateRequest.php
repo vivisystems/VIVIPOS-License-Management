@@ -28,17 +28,18 @@ function usage($script) {
  *
  ****************************************/
 
-function getRequests($reqID, &$dbh) {
+function getRequests($importReqID, &$dbh) {
 
     $requests = array();
     $rowCount = 0;
 
-    $querySQL = "SELECT p.partner_id, p.name, p.email, l.license_key, r.ticket
-    		   FROM Licenses l, Partners p, Requests r
-		  WHERE l.import_request_id = '${reqID}'
+    $querySQL = "SELECT p.partner_id, p.name, p.email, l.license_key, r.ticket, r.request_id, t.serial_number, l.serial_number
+    		   FROM Licenses l, Partners p, Requests r, Terminals t
+		  WHERE l.import_request_id = '${importReqID}'
 		    AND p.partner_id = l.partner_id
 		    AND r.terminal_stub = l.terminal_stub
 		    AND r.status = 0
+		    AND t.terminal_stub = l.terminal_stub
 		ORDER BY r.ticket";
 
     $res = mysql_query($querySQL, $dbh);
@@ -62,11 +63,128 @@ function getRequests($reqID, &$dbh) {
     if ($rowCount > 0) {
 	$i = 0;
 	while ($row = mysql_fetch_row($res)) {
-	    $requests[$i++] = array('partner_id'=>$row['0'], 'name'=>$row['1'], 'email'=>$row['2'], 'key'=>$row['3'], 'ticket'=>$row['4']);
+	    $requests[$i++] = array('partner_id'=>$row['0'],
+				    'name'=>$row['1'],
+				    'email'=>$row['2'],
+				    'key'=>$row['3'],
+				    'ticket'=>$row['4'],
+				    'request_id'=>$row['5'],
+				    'hw_sn'=>$row['6'],
+				    'sw_sn'=>$row['7']);
 	}
     }
 
     return $requests;
+}
+
+
+/****************************************
+ *
+ * send email responses and update request status
+ *
+ ****************************************/
+
+function sendLicenseResponse($importReqID, $responses) {
+    foreach($responses as $ticket=>$res) {
+	// write response to a tmp file
+	$filename = "/tmp/response-" . $ticket;
+	$fh = fopen($filename, "w");
+	if ($fh) {
+	    if (fwrite($fh, $res)) {
+
+		$r = shell_exec("/usr/bin/msmtp -C /home/license/LICENSES/msmtprc-request -t < " . $filename);
+		if (!is_bool($r)) {
+		    // successfully sent, need to update Request status
+		    $updateStatusSQL = "UPDATE Requests SET status = 1
+					 WHERE status = 0
+					   AND terminal_stub IN (SELECT terminal_stub
+								   FROM Licenses
+								  WHERE Licenses.import_request_id = '${importReqID}')";
+		    $res = mysql_query($updateStatusSQL, $dbh);
+
+		    // remove response file
+		    unlink($filename);
+		}
+	    }
+	    fclose($fh);
+	}
+    }
+}
+
+
+/****************************************
+ *
+ * generate email responses to deliver newly imported licenses to requester
+ *
+ * return values:
+ *
+ *   array	: array of email responses
+ *
+ ****************************************/
+
+function generateLicenseResponse($requests) {
+    $last_ticket = "";
+    $responses = array();
+    $response = "";
+    $boundary = @exec("uuid");
+
+    foreach($requests as $req) {
+	$ticket = $req['ticket'];
+	$partner_id = $req['partner_id'];
+	$name = $req['name'];
+	$email = $req['email'];
+	$key = $req['key'];
+	$request_id = $req['request_id'];
+	$hw_sn = $req['hw_sn'];
+	$sw_sn = $req['sw_sn'];
+
+	if ($ticket != $last_ticket) {
+
+	    // new ticket, save previous response and generate a new response
+	    if ($response != "") {
+		$responses[$last_ticket] = $response;
+		$response = "";
+	    }
+
+	    // generate email headers
+	    $response = $response . sprintf("From: VIVIPOS License Service <license-request@vivipos.com.tw>\n");
+	    $response = $response . sprintf("To: %s\n", $ticket);
+	    $response = $response . sprintf("Subject: Requested VIVIPOS license(s) generated (Request ID: %s)\n", $request_id);
+	    $response = $response . sprintf("Content-Type: multipart/mixed; boundary=%s\n\n", $boundary);
+
+	    $response = $response . sprintf("--%s\n", $boundary);
+	    $response = $response . sprintf("Content-Type: text/plain; charset=utf-8\n");
+	    $response = $response . sprintf("Content-Transfer-Encoding: 7bit\n\n");
+	    $response = $response . sprintf("Attached please find the license(s) that you have requested.\n\n");
+
+	    $last_ticket = $ticket;
+	}
+
+	if (!empty($sw_sn) & $sw_sn != "") {
+	    $file_name = $hw_sn . "-" . $sw_sn;
+	}
+	else {
+	    $file_name = $hw_sn;
+	}
+
+	$response = $response . sprintf("--%s\n", $boundary);
+
+	if ($partner_id == 'VIVIPOS SDK') {
+	    $response = $response . sprintf("Content-Type: application/octet-stream; name=\"%s.txt\"\n", $file_name);
+	    $response = $response . sprintf("Content-Disposition: attachment; filename=\"%s.txt\"\n\n", $file_name);
+	    $response = $response . sprintf("%s\n\n", $key);
+	}
+	else {
+	    $response = $response . sprintf("Content-Type: application/octet-stream; name=\"%s.lic\"\n", $file_name);
+	    $response = $response . sprintf("Content-Disposition: attachment; filename=\"%s.lic\"\n\n", $file_name);
+	    $response = $response . sprintf("[%s]\nname=%s\nemail=%s\nsigned_key=%s\n\n", $partner_id, $name, $email, $key);
+	}
+    }
+    if ($response != "") {
+	$response = $response . sprintf("--%s\n", $boundary);
+	$responses[$ticket] = $response;
+    }
+    return $responses;
 }
 
 
@@ -100,19 +218,12 @@ $requests = getRequests($argv[1], $dbh);
 
 if (is_array($requests)) {
     // iterate over requests, generate license file(s) for each request, and email back to support system
-    $last_ticket = "";
-    foreach($requests as $req) {
-	$ticket = $req['ticket'];
-	$partner_id = $req['partner_id'];
-	$name = $req['name'];
-	$email = $req['email'];
-	$key = $req['key'];
+    if (count($requests) > 0) {
+	$responses = generateLicenseResponse($requests);
 
-	if ($ticket != $last_ticket) {
-	    $last_ticket = $ticket;
-	    printf("%s[ticket: %s]\n\n", ($last_ticket == "") ? "" : "\n", $ticket);
+	if (is_array($responses) && count($responses) > 0) {
+	    sendLicenseResponse($argv[1], $responses);
 	}
-	printf("partner: %s\nname: %s\nemail: %s\nkey: %s\n\n", $partner_id, $name, $email, $key);
     }
 }
 else {

@@ -14,7 +14,9 @@ IFS='
 
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
 SMTP_CLIENT=msmtp
-REPLY_SENDER="VIVIPOS License Service"
+MSMTPRC="${BINDIR}/../msmtprc-request"
+
+REPLY_SENDER="\"VIVIPOS License Service\""
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License download request status"
 
@@ -259,7 +261,7 @@ send() {
 
     local RESPONSE_FILE=$1
 
-    "${SMTP_CLIENT}" -t < "${RESPONSE_FILE}" > "${RESPONSE_FILE}.log" 2>&1
+    "${SMTP_CLIENT}" -C "${MSMTPRC}" -t < "${RESPONSE_FILE}" > "${RESPONSE_FILE}.log" 2>&1
     if [ "$?" -ne 0 ]; then
         mv "${RESPONSE_FILE}" "${RESPONSE_FILE}.unsent"
     else

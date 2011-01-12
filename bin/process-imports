@@ -16,7 +16,7 @@ ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
 LICENSE_TOOL="${BINDIR}/getSystemLicense"
 PARTNER_TOOL="${BINDIR}/partners_lic_manager"
 SMTP_CLIENT=msmtp
-REPLY_SENDER="VIVIPOS License Service"
+REPLY_SENDER="\"VIVIPOS License Service\""
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
 REPLY_SUBJECT="License import request status"
 
@@ -30,6 +30,8 @@ LICENSE_REJECT_COUNT=0
 
 SUCCESSDIR="${REQDIR}/${REQUEST_ID}/success"
 FAILDIR="${REQDIR}/${REQUEST_ID}/fail"
+
+POST_SCRIPT="${BINDIR}/updateRequest.php"
 
 
 ############################################################################
@@ -495,6 +497,8 @@ EOF-${REQUEST_ID}
     echo "TOTAL: $((STUB_IMPORT_COUNT + LICENSE_IMPORT_COUNT)), STUBS: ${STUB_IMPORT_COUNT}, PARTNER LICENSES: ${LICENSE_IMPORT_COUNT}" >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
     echo >> "${REQDIR}/${REQUEST_ID}/response"
+
+    php5 "${POST_SCRIPT}" "${REQUEST_ID}"
 fi
 
 if [ -f "${REQDIR}/${REQUEST_ID}/rejected.log" ]; then
