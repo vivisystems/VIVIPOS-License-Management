@@ -35,7 +35,7 @@ function getRequests($importReqID, &$dbh) {
 
     $querySQL = "SELECT p.partner_id, p.name, p.email, l.license_key, r.ticket, r.request_id, t.serial_number, l.serial_number
     		   FROM Licenses l, Partners p, Requests r, Terminals t
-		  WHERE l.import_request_id = '${importReqID}'
+		  WHERE l.import_request_id = '{$importReqID}'
 		    AND p.partner_id = l.partner_id
 		    AND r.terminal_stub = l.terminal_stub
 		    AND r.status = 0
@@ -84,12 +84,13 @@ function getRequests($importReqID, &$dbh) {
  *
  ****************************************/
 
-function sendLicenseResponse($importReqID, $responses) {
+function sendLicenseResponse($importReqID, $responses, &$dbh) {
     foreach($responses as $ticket=>$res) {
 	// write response to a tmp file
 	$filename = "/tmp/response-" . $ticket;
 	$fh = fopen($filename, "w");
 	if ($fh) {
+	    $r=false;
 	    if (fwrite($fh, $res)) {
 
 		$r = shell_exec("/usr/bin/msmtp -C /home/license/LICENSES/msmtprc-request -t < " . $filename);
@@ -99,14 +100,14 @@ function sendLicenseResponse($importReqID, $responses) {
 					 WHERE status = 0
 					   AND terminal_stub IN (SELECT terminal_stub
 								   FROM Licenses
-								  WHERE Licenses.import_request_id = '${importReqID}')";
+								  WHERE Licenses.import_request_id = '{$importReqID}')";
 		    $res = mysql_query($updateStatusSQL, $dbh);
-
-		    // remove response file
-		    unlink($filename);
 		}
 	    }
 	    fclose($fh);
+
+	    // remove response file
+	    if (!is_bool($r) || $r) unlink($filename);
 	}
     }
 }
@@ -222,7 +223,7 @@ if (is_array($requests)) {
 	$responses = generateLicenseResponse($requests);
 
 	if (is_array($responses) && count($responses) > 0) {
-	    sendLicenseResponse($argv[1], $responses);
+	    sendLicenseResponse($argv[1], $responses, $dbh);
 	}
     }
 }

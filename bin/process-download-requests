@@ -261,7 +261,7 @@ send() {
 
     local RESPONSE_FILE=$1
 
-    "${SMTP_CLIENT}" -C "${MSMTPRC}" -t < "${RESPONSE_FILE}" > "${RESPONSE_FILE}.log" 2>&1
+    "${SMTP_CLIENT}" -t < "${RESPONSE_FILE}" > "${RESPONSE_FILE}.log" 2>&1
     if [ "$?" -ne 0 ]; then
         mv "${RESPONSE_FILE}" "${RESPONSE_FILE}.unsent"
     else
