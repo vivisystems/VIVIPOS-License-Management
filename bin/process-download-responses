@@ -50,7 +50,7 @@ REQ_BODY=`sed '1,/^$/d' "${REQDIR}/${REQUEST_ID}/req"`
 # extract original request ID from subject
 ############################################################################
 
-ORIG_REQUEST_ID=`echo "${REQ_SUBJECT}" | sed -e 's/^.*\[ID: \([0-9-]*\)\] \[License Requests\]$/\1/'`
+ORIG_REQUEST_ID=`echo "${REQ_SUBJECT}" | sed -e 's/^.*\[ID: \([0-9-]*\)\].*$/\1/'`
 
 ############################################################################
 # extract sender from request
@@ -106,7 +106,7 @@ if [ -d "${REQDIR}/${ORIG_REQUEST_ID}" ]; then
     if [ ${LICENSE_COUNT} -gt 0 ]; then
         if [ ${FAIL_COUNT} -gt 0 ]; then
             cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
-#queue Open License Requests
+# ignore
 The license(s) you requested are attached. However, we were unable to process
 one or more of the stub files you sent. Our support staff has been notified and
 will contact you to resolve the issue as soon as possible.
@@ -122,8 +122,7 @@ EOF-${REQUEST_ID}
     else
 	if [ $FAIL_COUNT -gt 0 ]; then
 	    cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
-#queue Open License Requests
-#ignore
+# ignore
 We were unable to retrieve the license(s) you have requested. Our support staff
 has been notified and will contact you to resolve the issue as soon as possible.
 
@@ -190,8 +189,7 @@ EOF-${REQUEST_ID}
 
 else
     cat >> "${REQDIR}/${REQUEST_ID}/response" << EOF-${REQUEST_ID}
-#ignore
-#queue Open License Requests
+# ignore
 
 Original request no longer available, redirected to Support Staff for follow up
 

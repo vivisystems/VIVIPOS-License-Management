@@ -52,7 +52,7 @@ validate_stub()
     local KEY=$4
 
     if [ -z "${ORDER}" ]; then
-	REASON="Order number is empty"
+	REASON="Order number is invalid or empty"
 	return 1
     else
 	local PREFIX=`echo -n ${ORDER} | awk -F"-" '{print $1}'`
