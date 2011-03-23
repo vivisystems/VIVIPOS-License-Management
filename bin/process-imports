@@ -56,13 +56,23 @@ validate_stub()
 	return 1
     else
 	local PREFIX=`echo -n ${ORDER} | awk -F"-" '{print $1}'`
-	if [ "${PREFIX}" != "C220" -a "${PREFIX}" != "S220" -a "${PREFIX}" != "B220" -a "${PREFIX}" != "V220" -a "${PREFIX}" != "VM" ]; then
+	if [ "${PREFIX}" != "C220" -a "${PREFIX}" != "S220" -a "${PREFIX}" != "B220" -a "${PREFIX}" != "V220" -a "${PREFIX}" != "VM" -a "${PREFIX}" != "TR" -a "${PREFIX}" != "RMA" ]; then
 	    REASON="Invalid order number"
 	    return 1
 	fi
     fi
 
-    if [ "${PREFIX}" = "VM" -a -z "${SERIAL}" ]; then
+    if [ "${PREFIX}" = "RMA" ]; then
+	SQL="SELECT concat(Licenses.order_number, ',', Licenses.serial_number, ',', Terminals.model) FROM Licenses, Terminals WHERE Terminals.serial_number = '${SERIAL}' AND Licenses.terminal_stub = Terminals.terminal_stub"
+	RMA_INFO=`echo "$SQL" | mysql -N Licenses`
+
+	if [ -z "${RMA_INFO}" ]; then
+	    REASON="RMA Terminal or License not found"
+	    return 1
+	fi
+    fi
+
+    if [ \( "${PREFIX}" = "VM" -o "{PREFIX}" = "RMA" \) -a -z "${SERIAL}" ]; then
 	REASON="Serial number is empty for non-VM license"
 	return 1
     fi
@@ -94,28 +104,58 @@ validate_stub()
 
 store_stub() {
 
-# do not update MODEL if new value is empty
-local UPDATE_MODEL_CLAUSE=""
-if [ -n "${MODEL}" ]; then
-    UPDATE_MODEL_CLAUSE="model=VALUES(model), "
-fi
+    local ORDER=$ORDER_NO
+    local SW_SERIAL=$SOFTWARE_SERIAL
+    local HW_MODEL=$MODEL
 
-# do not update license serial number if new value is empty
-local UPDATE_SERIAL_NUMBER_CLAUSE=""
-if [ -n "${SOFTWARE_SERIAL}" ]; then
-    UPDATE_SERIAL_CLAUSE="serial_number=VALUES(serial_number), "
-fi
+    # do not update MODEL if new value is empty
+    local UPDATE_MODEL_CLAUSE=""
+    if [ -n "${MODEL}" ]; then
+	UPDATE_MODEL_CLAUSE="model=VALUES(model), "
+    fi
 
-# insert entry into Terminals & Licenses, and update requests
-cat  <<EOF-${REQUEST_ID} | mysql Licenses
+    # do not update license serial number if new value is empty
+    local UPDATE_SERIAL_NUMBER_CLAUSE=""
+    if [ -n "${SOFTWARE_SERIAL}" ]; then
+	UPDATE_SERIAL_CLAUSE="serial_number=VALUES(serial_number), "
+    fi
+
+    if [ "${ORDER_NO}" = "RMA" ]; then
+	# mark existing Terminal and License entries as RMA
+	cat  <<EOF-${REQUEST_ID} | mysql Licenses
+BEGIN;
+UPDATE Licenses
+    SET license_key = concat('RMA-', license_key, '-${REQUEST_ID}')
+    WHERE terminal_stub = (SELECT terminal_stub FROM Terminals where serial_number = '${HARDWARE_SERIAL}');
+
+UPDATE Terminals
+    SET serial_number = concat('RMA-', serial_number, '-${REQUEST_ID}')
+    WHERE serial_number = '${HARDWARE_SERIAL}';
+
+COMMIT;
+EOF-${REQUEST_ID}
+
+	if [ $? -ne 0 ]; then
+	    REASON="Failed to mark existing Terminal and License as RMA ($?)"
+	    return 1
+	fi
+
+	# retrieve Order Number, Software Serial Number, and Hardware Model
+	ORDER=`echo "${RMA_INFO}" | awk -F"," '{print $1}'`
+	SW_SERIAL=`echo "${RMA_INFO}" | awk -F"," '{print $2}'`
+	HW_MODEL=`echo "${RMA_INFO}" | awk -F"," '{print $3}'`
+    fi
+
+    # insert entry into Terminals & Licenses, and update requests
+    cat  <<EOF-${REQUEST_ID} | mysql Licenses
 BEGIN;
 
 INSERT into Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, import_request_id, signed_by)
-    values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
+    values ('${license_stub}', '${HARDWARE_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', '${HW_MODEL}', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${SENDER}')
     ON DUPLICATE KEY UPDATE ${UPDATE_MODEL_CLAUSE} serial_number=VALUES(serial_number), created_by=VALUES(created_by), import_request_id=VALUES(import_request_id), signed_by=VALUES(signed_by), update_count=update_count+1;
 
 INSERT into Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, import_request_id)
-    values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SOFTWARE_SERIAL}', '${ORDER_NO}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
+    values ('${license_stub}', '${SDK_PARTNER_ID}', '${KEY}', 0, '${SW_SERIAL}', '${ORDER}', '${SENDER}', '${REQ_TO}', NOW(), '${REQUEST_ID}')
     ON DUPLICATE KEY UPDATE license_key=VALUES(license_key), expire_date=VALUES(expire_date), ${UPDATE_SERIAL_CLAUSE} order_number=VALUES(order_number), signed_by=VALUES(signed_by), created_by=VALUES(created_by), import_request_id='${REQUEST_ID}', update_count=update_count+1;
 
 COMMIT;
@@ -434,7 +474,7 @@ done
 for stub in `find ${ATTACHDIR} -maxdepth 1 -name \*.txt`; do
 
     # for TXT, order number should be in the subject line
-    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*(B220|C220|V220|S220|VM)-[[:alnum:]]+"`
+    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*((B220|C220|V220|S220|VM|TR|RMA)-[[:alnum:]]+|RMA)"`
     ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}'`
     MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/#[^#]*$//'`
 
