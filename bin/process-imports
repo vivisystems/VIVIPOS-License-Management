@@ -77,6 +77,11 @@ validate_stub()
 	return 1
     fi
 
+    if [ "${SERIAL}" = "license_stub" ]; then
+	REASON="Invalid hardware serial number"
+	return 1
+    fi
+
     local STUB_LEN=`echo -n ${STUB} | wc -c`
     if [ ${STUB_LEN} -ne 128 ]; then
 	REASON="Terminal stub length is not 128 bytes (${STUB_LEN})"
