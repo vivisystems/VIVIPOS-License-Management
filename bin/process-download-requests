@@ -45,8 +45,8 @@ process_stub() {
 
     # for each stub file, generate corresponding SDK key and partner license key files
     local BASE_NAME=`basename "${stub}" .txt | sed -e 's/\.[^\.]*//'`
-    local SDK_KEY_FILE="${BASE_NAME}.lic"
-    local PARTNER_KEY_FILE="${BASE_NAME}_partner.lic"
+    local SDK_KEY_FILE="vivipos.lic"
+    local PARTNER_KEY_FILE="vivipos_partner.lic"
 
     local ERROR_FLAG=0
 
