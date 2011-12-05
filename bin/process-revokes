@@ -67,7 +67,6 @@ BEGIN;
 
 INSERT INTO Revokes(terminal_stub,
 		    partner_id,
-		    request_id, 
 		    serial_number,
 		    license_key,
 		    expire_date,
@@ -83,7 +82,6 @@ INSERT INTO Revokes(terminal_stub,
 		    revoke_request_id)
     SELECT terminal_stub,
 	   partner_id,
-	   request_id,
 	   serial_number,
 	   license_key,
 	   expire_date,
@@ -428,11 +426,7 @@ s_.*boundary=\(.*\)_\1_
 p
 }'`
 
-if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
-    RES_MULTIPART_BOUNDARY=`uuid`
-else
-    RES_MULTIPART_BOUNDARY="${REQ_MULTIPART_BOUNDARY}"
-fi
+RES_MULTIPART_BOUNDARY=`uuid`
 
 ############################################################################
 # extract sender from request
@@ -545,23 +539,12 @@ echo >> "${REQDIR}/${REQUEST_ID}/response"
 # include original email
 ############################################################################
 cat >> "${REQDIR}/${REQUEST_ID}/response" <<EOF-${REQUEST_ID}
--------- Original Email --------
-From: ${SENDER}
-To: ${REQ_TO}
-Date: ${REQ_DATE}
-${REQ_SUBJECT}
-
 --${RES_MULTIPART_BOUNDARY}
-EOF-${REQUEST_ID}
+Content-Type: message/rfc822
 
-if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
-echo "${REQ_CONTENT_TYPE}" >> "${REQDIR}/${REQUEST_ID}/response"
-echo >> "${REQDIR}/${REQUEST_ID}/response"
-fi
-
-cat >> "${REQDIR}/${REQUEST_ID}/response" <<EOF-${REQUEST_ID}
-${REQ_BODY}
 EOF-${REQUEST_ID}
+cat "${REQDIR}/${REQUEST_ID}/req" >> "${REQDIR}/${REQUEST_ID}/response"
+echo "--${RES_MULTIPART_BOUNDARY}--" >> "${REQDIR}/${REQUEST_ID}/response"
 
 ############################################################################
 # email response
