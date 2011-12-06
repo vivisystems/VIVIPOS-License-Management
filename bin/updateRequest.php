@@ -93,7 +93,7 @@ function sendLicenseResponse($importReqID, $responses, &$dbh) {
 	    $r=false;
 	    if (fwrite($fh, $res)) {
 
-		$r = shell_exec("/usr/bin/msmtp -C /home/license/LICENSES/msmtprc-request -t < " . $filename);
+		$r = shell_exec("/usr/bin/msmtp -C /home/license/VIVIPOS-License-Management/msmtprc-request -t < " . $filename);
 		if (!is_bool($r)) {
 		    // successfully sent, need to update Request status
 		    $updateStatusSQL = "UPDATE Requests SET status = 1
@@ -161,23 +161,16 @@ function generateLicenseResponse($requests) {
 	    $last_ticket = $ticket;
 	}
 
-	if (!empty($sw_sn) & $sw_sn != "") {
-	    $file_name = $hw_sn . "-" . $sw_sn;
-	}
-	else {
-	    $file_name = $hw_sn;
-	}
-
 	$response = $response . sprintf("--%s\n", $boundary);
 
 	if ($partner_id == 'VIVIPOS SDK') {
-	    $response = $response . sprintf("Content-Type: application/octet-stream; name=\"%s.txt\"\n", $file_name);
-	    $response = $response . sprintf("Content-Disposition: attachment; filename=\"%s.txt\"\n\n", $file_name);
+	    $response = $response . sprintf("Content-Type: application/octet-stream; name=\"vivipos.lic\"\n");
+	    $response = $response . sprintf("Content-Disposition: attachment; filename=\"vivipos.lic\"\n\n");
 	    $response = $response . sprintf("%s\n\n", $key);
 	}
 	else {
-	    $response = $response . sprintf("Content-Type: application/octet-stream; name=\"%s.lic\"\n", $file_name);
-	    $response = $response . sprintf("Content-Disposition: attachment; filename=\"%s.lic\"\n\n", $file_name);
+	    $response = $response . sprintf("Content-Type: application/octet-stream; name=\"vivipos.lic\"\n");
+	    $response = $response . sprintf("Content-Disposition: attachment; filename=\"vivipos.lic\"\n\n");
 	    $response = $response . sprintf("[%s]\nname=%s\nemail=%s\nsigned_key=%s\n\n", $partner_id, $name, $email, $key);
 	}
     }
