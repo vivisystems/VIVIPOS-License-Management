@@ -5,6 +5,7 @@
 ############################################################################
 
 PATH=/bin:/usr/bin:/usr/local/bin
+UNRAR=/usr/local/bin/unrar
 BINDIR=`dirname $0`
 REQDIR=$1
 COUNT=$2
@@ -447,7 +448,7 @@ for f in `find ${ATTACHDIR} -name \*.rar`; do
 
     # extract stub files into temp folder
     mkdir "${ATTACHDIR}/${ORDER_NO}"
-    unrar x -y "$f" "${ATTACHDIR}/${ORDER_NO}"
+    ${UNRAR} x -y "$f" "${ATTACHDIR}/${ORDER_NO}"
 
     for stub in `find "${ATTACHDIR}/${ORDER_NO}" -name \*.txt`; do
         process_stub "${stub}"
