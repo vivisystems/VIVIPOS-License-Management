@@ -107,7 +107,7 @@ function sendLicenseResponse($importReqID, $responses, &$dbh) {
 	    fclose($fh);
 
 	    // remove response file
-	    if (!is_bool($r) || $r) unlink($filename);
+	    //if (!is_bool($r) || $r) unlink($filename);
 	}
     }
 }
@@ -175,7 +175,7 @@ function generateLicenseResponse($requests) {
 	}
     }
     if ($response != "") {
-	$response = $response . sprintf("--%s\n", $boundary);
+	$response = $response . sprintf("--%s--\n", $boundary);
 	$responses[$ticket] = $response;
     }
     return $responses;

@@ -183,7 +183,6 @@ Subject: ${REQ_SUBJECT_CONTENT} [ID: ${REQUEST_ID}]
 Reply-To: ${SENDER}
 Content-Type: multipart/mixed; boundary=${RES_MULTIPART_BOUNDARY}
 
---${RES_MULTIPART_BOUNDARY}
 Content-Type: text/plain; charset=utf-8
 Content-Transfer-Encoding: 7bit
 
@@ -191,16 +190,10 @@ Request received via ${REQ_TO}
 
 --------------- Original Request ---------------
 
---${RES_MULTIPART_BOUNDARY}
 EOF-${REQUEST_ID}
 
-    if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
-        echo "${REQ_CONTENT_TYPE}" >> "${OUTPUT_FILE}"
-        echo >> "${OUTPUT_FILE}"
-    fi
-
     cat >> "${OUTPUT_FILE}" <<EOF-${REQUEST_ID}
-${REQ_BODY}
+${REQ_BODY}--
 EOF-${REQUEST_ID}
 
 }
@@ -236,16 +229,10 @@ VIVIPOS Support
 
 --------------- Original Request ---------------
 
---${RES_MULTIPART_BOUNDARY}
 EOF-${REQUEST_ID}
 
-    if [ -z "${REQ_MULTIPART_BOUNDARY}" ]; then
-        echo "${REQ_CONTENT_TYPE}" >> "${OUTPUT_FILE}"
-        echo >> "${OUTPUT_FILE}"
-    fi
-
     cat >> "${OUTPUT_FILE}" <<EOF-${REQUEST_ID}
-${REQ_BODY}
+${REQ_BODY}--
 EOF-${REQUEST_ID}
 
 }
