@@ -6,4 +6,4 @@ set no spambounce
 set properties ""
 poll pop.gmail.com port 995 with proto POP3
 user license-request@vivipos.com.tw there with password "8368Kn9k" is vivipos here options flush no rewrite ssl sslcertck fetchall
-sslfingerprint "90:9A:84:92:E7:60:7C:A2:45:73:C9:11:D7:FE:7D:8A"
+sslfingerprint "B8:AF:A7:80:CD:E2:31:50:6F:ED:0E:4F:C8:04:D6:CD"

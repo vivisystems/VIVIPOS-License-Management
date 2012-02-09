@@ -57,7 +57,7 @@ validate_stub()
 	return 1
     else
 	local PREFIX=`echo -n ${ORDER} | awk -F"-" '{print $1}'`
-	if [ "${PREFIX}" != "C220" -a "${PREFIX}" != "S220" -a "${PREFIX}" != "B220" -a "${PREFIX}" != "V220" -a "${PREFIX}" != "VM" -a "${PREFIX}" != "TR" -a "${PREFIX}" != "RMA" ]; then
+	if [ "${PREFIX}" != "C220" -a "${PREFIX}" != "S220" -a "${PREFIX}" != "B220" -a "${PREFIX}" != "V220" -a "${PREFIX}" != "S221" -a "${PREFIX}" != "C221" -a "${PREFIX}" != "V221" -a "${PREFIX}" != "B221" -a "${PREFIX}" != "VM" -a "${PREFIX}" != "TR" -a "${PREFIX}" != "RMA" ]; then
 	    REASON="Invalid order number"
 	    return 1
 	fi
@@ -475,7 +475,7 @@ done
 for stub in `find ${ATTACHDIR} -maxdepth 1 -name \*.txt`; do
 
     # for TXT, order number should be in the subject line
-    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*((B220|C220|V220|S220|VM|TR|RMA)-[[:alnum:]]+|RMA)"`
+    SUBJECT_LINE=`echo "${REQ_SUBJECT}" | grep -E -m 1 -e "^Subject: [ \t]*((B220|C220|V220|S220|B221|C221|V221|S221|VM|TR|RMA)-[[:alnum:]]+|RMA)"`
     ORDER_NO=`echo "${SUBJECT_LINE}" | awk '{print $2}'`
     MODEL=`echo "${SUBJECT_LINE}" | awk '{print $3}' | sed 's/#[^#]*$//'`
 
