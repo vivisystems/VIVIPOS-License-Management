@@ -196,6 +196,9 @@ process_stub() {
     # import stub details into environment
     eval `awk -F"=" '$1 ~ /^[A-Za-z0-9_]+$/ { print "export " $1 "=\"" $2 "\"";  }' "${stub}"`
 
+    # strip out leading and trailing spaces
+    license_stub=`echo -n ${license_stub} | sed -e 's/^[^a-f0-9]*//g;s/[^a-f0-9]$//g'`
+
     # generate license key
     KEY=`${LICENSE_TOOL} -f "${stub}"`
 
