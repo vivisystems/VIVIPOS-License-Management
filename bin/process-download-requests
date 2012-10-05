@@ -173,7 +173,7 @@ cat <<EOF-${REQUEST_ID} | mysql -N Licenses
 BEGIN;
 
 INSERT INTO Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, import_request_id, signed_by)
-    values ('${license_stub}', '${HW_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', 'DEMO VM', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${REQ_TO}');
+    values ('${license_stub}', '${HW_SERIAL}-${REQUEST_ID}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', 'DEMO VM', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${REQ_TO}');
 
 INSERT INTO Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, import_request_id)
     values ('${license_stub}', '${SDK_PARTNER_ID}', '${LICENSE_KEY}', 0, '${SW_SERIAL}', 'DEMO VM', '${REQ_TO}', '${REQ_TO}', NOW(), '${REQUEST_ID}');
