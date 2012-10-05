@@ -15,6 +15,7 @@ IFS='
 ATTACHDIR="${REQDIR}/${REQUEST_ID}/attachments"
 SMTP_CLIENT=msmtp
 MSMTPRC="${BINDIR}/../msmtprc-request"
+LICENSE_TOOL="${BINDIR}/getSystemLicense"
 
 REPLY_SENDER="\"VIVIPOS License Service\""
 REPLY_REPLY_TO="license-service-noreply@vivipos.com.tw"
@@ -28,6 +29,34 @@ LICENSEDIR="${REQDIR}/${REQUEST_ID}/licenses"
 SUCCESSDIR="${REQDIR}/${REQUEST_ID}/success"
 FAILDIR="${REQDIR}/${REQUEST_ID}/fail"
 
+
+############################################################################
+#
+# is_demo_vm
+#
+# check if the license stub is from demo vm
+#
+# @args: <stub file>
+#
+# @return: 0 if license stub is from demo vm
+#          1 if license stub is invalid or not from demo vm
+############################################################################
+
+is_demo_vm() {
+    local stub=$1
+
+    local stub_len=`echo -n ${stub} | wc -c`
+    if [ ${stub_len} -ne 128 ]; then
+	return 1
+    fi
+
+    local checksum=`echo -n ${stub} | cut -c 1-4,33-36,65-68,97-100`
+    if [ "${checksum}" = 'demodemodemodemo' ]; then
+    	return 0
+    else
+    	return 1
+    fi
+}
 
 ############################################################################
 #
@@ -49,6 +78,7 @@ process_stub() {
     local PARTNER_KEY_FILE="vivipos_partner.lic"
 
     local ERROR_FLAG=0
+    local DEMOVM=0
 
     # import stub details into environment
     license_stub=
@@ -86,13 +116,26 @@ EOF-${REQUEST_ID}`
     else
 
 	# retrieve SDK license key
+	local LICENSE_KEY=''
+
 	local SQL="select license_key FROM Licenses where terminal_stub='${license_stub}' and partner_id='${SDK_PARTNER_ID}' limit 1"
-	local LICENSE_KEY=`echo "${SQL}" | mysql -N Licenses`
+	LICENSE_KEY=`echo "${SQL}" | mysql -N Licenses`
 
 	if [ "$?" -ne 0 ]; then
 	    ERROR_FLAG=1
 	    echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <Database error while retrieving SDK license>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
 	elif [ -z "${LICENSE_KEY}" ]; then
+
+	    # automatically generate license key if demo vm
+	    is_demo_vm "$license_stub"
+	    if [ "$?" -eq 0 ]; then
+		DEMOVM=1
+                # generate license key
+		LICENSE_KEY=`${LICENSE_TOOL} -f "${stub}"`
+	    fi
+	fi
+	    
+	if [ -z "${LICENSE_KEY}" ]; then
 	    ERROR_FLAG=1
 	    echo "FILE <${BASE_NAME}> TYPE <SDK> REASON <SDK license not found>" >> "${REQDIR}/${REQUEST_ID}/failed.log"
 
@@ -122,10 +165,31 @@ EOF-${REQUEST_ID}
 	    echo -n "${LICENSE_KEY}" > "${LICENSEDIR}/${SDK_KEY_FILE}"
 	    echo "FILE <${BASE_NAME}> TYPE <SDK>" >> "${REQDIR}/${REQUEST_ID}/download.log"
 
+	    # if demo vm, insert terminal and license entries
+	    if [ "${DEMOVM}" -eq 1 ]; then
+
+		# insert terminal entry, license entry, and update request status
+cat <<EOF-${REQUEST_ID} | mysql -N Licenses
+BEGIN;
+
+INSERT INTO Terminals(terminal_stub, serial_number, dallas_key, system_name, vendor_name, mac_address, model, created_by, created, import_request_id, signed_by)
+    values ('${license_stub}', '${HW_SERIAL}', '${dallas}', '${system_name}', '${vendor_name}', '${mac_address}', 'DEMO VM', '${REQ_TO}', NOW(), '${REQUEST_ID}', '${REQ_TO}');
+
+INSERT INTO Licenses(terminal_stub, partner_id, license_key, expire_date, serial_number, order_number, signed_by, created_by, created, import_request_id)
+    values ('${license_stub}', '${SDK_PARTNER_ID}', '${LICENSE_KEY}', 0, '${SW_SERIAL}', 'DEMO VM', '${REQ_TO}', '${REQ_TO}', NOW(), '${REQUEST_ID}');
+
+UPDATE Requests
+   SET status = 1
+ WHERE request_id = '${REQUEST_ID}';
+
+COMMIT;
+EOF-${REQUEST_ID}
+	    fi
+
 	    # record download request
 cat <<EOF-${REQUEST_ID} | mysql -N Licenses
 INSERT into Downloads(terminal_stub, partner_id, ip_address, sdk_version, app_version, os_version, license_helper_version, download_request_id, created, created_by)
-    values('${license_stub}', '${SDK_PARTNER_ID}', '${SENDER}', NULL, NULL, NULL, NULL, '${REQUEST_ID}', NOW(), '${REQ_TO}')
+    values('${license_stub}', '${SDK_PARTNER_ID}', '${SENDER}', '${SDK_VERSION}', '${APP_VERSION}', '${OS_VERSION}', '${LIC_HELPER_VERSION}', '${REQUEST_ID}', NOW(), '${REQ_TO}')
 EOF-${REQUEST_ID}
 
 	fi
@@ -151,8 +215,8 @@ EOF-${REQUEST_ID}`
 		local L_PARTNER_ID=`echo "${l}" | awk -F"\t" '{ print $1 }'`
 
 		cat <<EOF-${REQUEST_ID} | mysql -N Licenses
-INSERT into Downloads(terminal_stub, partner_id, ip_address, sdk_version, app_version, license_helper_version, download_request_id, created, created_by)
-    values('${license_stub}', '${L_PARTNER_ID}', '${SENDER}', NULL, NULL, NULL, '${REQUEST_ID}', NOW(), '${REQ_TO}')
+INSERT into Downloads(terminal_stub, partner_id, ip_address, sdk_version, app_version, os_version, license_helper_version, download_request_id, created, created_by)
+    values('${license_stub}', '${L_PARTNER_ID}', '${SENDER}', '${SDK_VERSION}', '${APP_VERSION}', '${OS_VERSION}', '${LIC_HELPER_VERSION}', '${REQUEST_ID}', NOW(), '${REQ_TO}')
 EOF-${REQUEST_ID}
 	    done
 	fi
@@ -309,6 +373,16 @@ if [ -z "${SENDER}" ]; then
 fi
 
 ############################################################################
+# extract hardware/software identification
+############################################################################
+HW_SERIAL=`grep -E -m 1 -e '^Hardware Serial Number: ' "${REQDIR}/${REQUEST_ID}/req" | cut -c 25-`
+SW_SERIAL=`grep -E -m 1 -e '^Software Serial Number: ' "${REQDIR}/${REQUEST_ID}/req" | cut -c 25-`
+SDK_VERSION=`grep -E -m 1 -e '^SDK Version : ' "${REQDIR}/${REQUEST_ID}/req" | cut -c 15-`
+APP_VERSION=`grep -E -m 1 -e '^App Version : ' "${REQDIR}/${REQUEST_ID}/req" | cut -c 15-`
+OS_VERSION=`grep -E -m 1 -e '^OS Version : ' "${REQDIR}/${REQUEST_ID}/req" | cut -c 14-`
+LIC_HELPER_VERSION=`grep -E -m 1 -e '^License Helper Version: ' "${REQDIR}/${REQUEST_ID}/req" | cut -c 25-`
+
+############################################################################
 # extract attachments
 ############################################################################
 ripmime -i "${REQDIR}/${REQUEST_ID}/req" -d "${ATTACHDIR}" --no-nameless
@@ -354,3 +428,8 @@ else
     reject "${REQDIR}/${REQUEST_ID}/invalid"
     send "${REQDIR}/${REQUEST_ID}/invalid"
 fi
+
+############################################################################
+# import demo VM stub(s) if present
+############################################################################
+
